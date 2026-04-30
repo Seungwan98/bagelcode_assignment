@@ -1,4 +1,4 @@
-export type RunStatus = 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped';
+export type RunStatus = 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'stale';
 export type RunMode = 'mock' | 'cli';
 export type AgentRole = 'planner' | 'engineer' | 'reviewer';
 export type AgentStatus = 'idle' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed';
@@ -19,6 +19,7 @@ export type EventType =
   | 'run.created'
   | 'run.started'
   | 'run.completed'
+  | 'run.stale'
   | 'agent.started'
   | 'agent.status_changed'
   | 'message.sent'
@@ -36,9 +37,11 @@ export interface Run {
   brief: string;
   status: RunStatus;
   mode: RunMode;
+  clientSessionId?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  staleReason?: string;
 }
 
 export interface AgentState {
@@ -91,11 +94,38 @@ export interface RunState {
   latestArtifact?: Artifact;
 }
 
+export interface ClientSessionRunSummary {
+  runId: string;
+  title: string;
+  status: RunStatus;
+  mode: RunMode;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface ClientSession {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  activeRunId?: string;
+  recentRunIds: string[];
+  runs: ClientSessionRunSummary[];
+}
+
+export interface ClientSessionSnapshot {
+  session: ClientSession;
+  activeRun?: ClientSessionRunSummary;
+  recentRuns: ClientSessionRunSummary[];
+  staleRunIds: string[];
+}
+
 export interface CreateRunInput {
   title?: string;
   brief: string;
   mode?: RunMode;
   agents?: AgentRole[];
+  clientSessionId?: string;
 }
 
 export interface InterventionInput {

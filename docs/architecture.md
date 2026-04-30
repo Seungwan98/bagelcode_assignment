@@ -16,6 +16,7 @@ AgentBoard는 여러 AI 에이전트가 하나의 작업을 분담하고, 사용
 사용자
   └─ Browser Chat UI
       ├─ 대화 생성
+      ├─ session resume 카드로 최근 대화 복원
       ├─ Agent 상태 rail 관찰
       ├─ Agent detail panel로 현재 상태 확인
       ├─ 사용자-facing 메시지 버블 관찰
@@ -27,6 +28,7 @@ Next.js App
   ├─ Page / React Components
   ├─ API Route Handlers
   ├─ SSE Event Stream
+  ├─ Browser session resume lookup
   └─ Runner Launcher
 
 Runner Process
@@ -37,7 +39,7 @@ Runner Process
   └─ Control Loop
 
 Local State Store
-  └─ .agentboard/runs/<runId>/
+  ├─ .agentboard/runs/<runId>/
       ├─ run.json
       ├─ state.json
       ├─ events.jsonl
@@ -45,6 +47,7 @@ Local State Store
       ├─ agents/<agentId>/inbox.jsonl
       ├─ agents/user/inbox.jsonl
       └─ artifacts/final-report.md
+  └─ .agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
 ## 모듈 구조
@@ -55,8 +58,14 @@ Local State Store
 
 주요 구성:
 
-- `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택
+- `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택, 브라우저 session 생성/조회, 최근 run resume 카드
 - `ChatRoom`: run header, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, intervention composer를 한 화면에서 제공
+- `ChatRoom`의 selected agent/log/report/target/draft 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
+
+브라우저 session state는 두 계층으로 나뉜다.
+
+- 서버 local file store: `clientSessionId`와 active/recent run association
+- 브라우저 `localStorage`: run별 선택 agent, Logs/보고서 drawer, target, draft 같은 UI 편의 상태
 
 ### Next.js API Layer
 
@@ -65,6 +74,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 주요 책임:
 
 - Run 생성
+- Session snapshot 조회 및 stale run 정리
 - Run 상태 조회
 - SSE event stream 제공
 - 사용자 개입 메시지 기록
@@ -122,9 +132,30 @@ Browser -> POST /api/runs -> Next.js API -> run directory 생성 -> runner 시�
 
 1. 사용자가 `/`에서 과제 brief를 입력한다.
 2. `POST /api/runs`가 `run.json`, `state.json`을 만든다.
-3. 서버가 mock runner를 기본 실행한다.
-4. Chat UI가 `/runs/<runId>`로 이동한다.
-5. Browser가 `GET /api/runs/<runId>/events`에 `EventSource`로 연결한다.
+3. 요청에 `clientSessionId`가 있으면 `_sessions/<clientSessionId>.json`의 active/recent run을 갱신한다.
+4. 서버가 mock runner를 기본 실행한다.
+5. Chat UI가 `/runs/<runId>`로 이동한다.
+6. Browser가 `GET /api/runs/<runId>/events`에 `EventSource`로 연결한다.
+
+### 1-1. Session resume
+
+```text
+Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> active/recent run 표시 -> /runs/<runId> 이동
+```
+
+1. 브라우저가 `clientSessionId`를 localStorage에서 읽거나 새로 만든다.
+2. Landing UI가 session snapshot을 조회한다.
+3. 서버는 missing run을 recent list에서 제거하고, 오래된 `running` run을 `stale`로 표시한다.
+4. UI는 active run 또는 recent run을 resume 카드로 보여준다.
+
+
+### 1-2. ChatRoom session active 연결
+
+```text
+/runs/<runId> open -> localStorage clientSessionId 확인 -> POST /api/sessions/<clientSessionId>/active-run -> _sessions index 갱신
+```
+
+이 route는 사용자가 resume 카드가 아닌 직접 URL로 채팅방에 들어온 경우에도 현재 브라우저 session의 active run을 최신화하기 위한 보조 API다. `clientSessionId`는 인증 토큰이 아니라 로컬 resume 편의를 위한 association key다.
 
 ### 2. Agent 간 협업
 
@@ -165,6 +196,7 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 - `user.intervened`
 - `artifact.updated`
 - `run.completed`
+- `run.stale`
 - `error`
 
 `state.json`은 UI 속도를 위한 snapshot이며, 필요하면 event log에서 재구성할 수 있어야 한다.
@@ -174,6 +206,8 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 상세 스펙은 `configuration.md`와 구현 코드의 route handler를 기준으로 한다.
 
 - `POST /api/runs`
+- `GET /api/sessions/:clientSessionId`
+- `POST /api/sessions/:clientSessionId/active-run`
 - `GET /api/runs/:runId`
 - `GET /api/runs/:runId/events`
 - `POST /api/runs/:runId/interventions`
@@ -191,8 +225,9 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 6. Agent 상태 rail
 7. User Intervention composer
 8. 보고서 drawer
-9. README 실행 흐름
-10. Optional Firebase/CLI adapter
+9. Browser session resume와 ChatRoom UI state persistence
+10. README 실행 흐름
+11. Optional Firebase/CLI adapter
 
 ## 설계 제약
 

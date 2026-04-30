@@ -179,9 +179,32 @@ MVP local state root:
 .agentboard/runs/<runId>/events.jsonl
 .agentboard/runs/<runId>/messages.jsonl
 .agentboard/runs/<runId>/artifacts/final-report.md
+.agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
 `.agentboard/`는 commit하지 않는다.
+
+## Session persistence config
+
+브라우저별 session resume는 local file store와 browser localStorage만 사용한다.
+
+서버 저장 항목:
+
+- `Run.clientSessionId`
+- `_sessions/<clientSessionId>.json`의 `activeRunId`, `recentRunIds`
+
+브라우저 저장 항목:
+
+- `agentboard:clientSessionId`
+- `agentboard:run-ui:<runId>`
+
+오래된 `running` run을 stale로 바꾸는 threshold는 기본 15분이다.
+
+```bash
+AGENTBOARD_STALE_RUN_MS=900000
+```
+
+이 값은 로컬 process 재시작 뒤 resume UI에서 안전하게 “더 이상 실행 중이라고 신뢰하지 않는 run”을 표시하기 위한 것이다. 인증이나 보안 판단에 사용하지 않는다.
 
 ## Git ignore 대상
 

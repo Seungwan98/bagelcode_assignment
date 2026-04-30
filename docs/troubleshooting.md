@@ -83,6 +83,48 @@ ls -la .agentboard/runs/<runId>/artifacts
 cat .agentboard/runs/<runId>/artifacts/final-report.md
 ```
 
+## 최근 대화 resume 카드가 보이지 않음
+
+### 가능한 원인
+
+- 브라우저 localStorage의 `agentboard:clientSessionId`가 삭제됐다.
+- 새 run 생성 요청에 `clientSessionId`가 전달되지 않았다.
+- `.agentboard/runs/_sessions/<clientSessionId>.json`이 없거나 손상됐다.
+- recent run directory가 삭제됐다.
+
+### 확인
+
+브라우저 DevTools에서 localStorage를 확인한다.
+
+```text
+agentboard:clientSessionId
+```
+
+서버 local state도 확인한다.
+
+```bash
+find .agentboard/runs/_sessions -maxdepth 1 -type f | sort
+cat .agentboard/runs/_sessions/<clientSessionId>.json
+```
+
+session 파일이 없으면 새 run을 만들면 다시 생성된다. 손상된 session 파일은 로컬 상태이므로 백업 뒤 삭제하고 다시 시작할 수 있다.
+
+## 실행 중이던 run이 stale로 표시됨
+
+### 의미
+
+`stale`은 로컬 서버 또는 runner process가 중단되어 더 이상 `running` 상태를 신뢰할 수 없다는 안전 표시다. 결과 기록은 남아 있으므로 `/runs/<runId>`에서 메시지와 artifact를 확인할 수 있다.
+
+### 확인/조정
+
+기본 stale threshold는 15분이다. 로컬 실험에서 더 길게 유지하려면 dev server 실행 전에 설정한다.
+
+```bash
+AGENTBOARD_STALE_RUN_MS=1800000 npm run dev
+```
+
+stale run을 계속 진행시키는 resume-runner 기능은 MVP 범위가 아니다. 새 run을 생성하거나 기존 기록을 참고해 후속 지시를 다시 시작한다.
+
 ## Firebase 관련 오류
 
 ### 증상

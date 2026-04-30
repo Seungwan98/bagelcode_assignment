@@ -90,6 +90,24 @@ pre {
 .start-chat-header { display: grid; gap: 6px; }
 .start-chat-header h2 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.1rem); }
 .start-chat-header p { margin: 0; }
+.resume-run-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(125, 211, 252, .32);
+  border-radius: 24px;
+  background: rgba(125, 211, 252, .09);
+  padding: 16px;
+}
+.resume-run-card h3 { margin: 4px 0 6px; font-size: 1.05rem; }
+.resume-run-card p { margin-bottom: 6px; }
+.resume-run-card small { color: var(--muted); }
+.resume-run-card.stale {
+  border-color: rgba(253, 230, 138, .4);
+  background: rgba(253, 230, 138, .08);
+}
+.resume-run-card button { flex: 0 0 auto; }
 .compact-field { display: grid; gap: 8px; color: var(--muted); font-size: .92rem; }
 .mode-switch {
   display: grid;
@@ -175,6 +193,7 @@ pre {
 .badge.running { color: var(--warning); border-color: rgba(253, 230, 138, .35); }
 .badge.completed, .badge.done { color: var(--accent-2); border-color: rgba(167, 243, 208, .35); }
 .badge.failed, .badge.error { color: var(--danger); border-color: rgba(253, 164, 175, .35); }
+.badge.stale { color: var(--warning); border-color: rgba(253, 230, 138, .42); }
 .logs-drawer {
   position: absolute;
   top: 92px;
@@ -505,6 +524,8 @@ pre {
 
 @media (max-width: 760px) {
   .landing-shell { width: min(100% - 20px, 980px); padding: 28px 0; }
+  .resume-card { display: grid; }
+  .resume-card button { width: 100%; }
   .proof-strip { grid-template-columns: 1fr; }
   .chat-shell { padding: 0; }
   .chat-app { height: 100vh; border-radius: 0; border: 0; }

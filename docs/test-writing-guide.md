@@ -29,6 +29,7 @@ AgentBoard MVP에서 중요한 것은 “에이전트 간 메시징”, “사�
 - Message Bus가 `messages.jsonl`과 target inbox에 동시에 기록하는지
 - Intervention API가 user message를 생성하고 agent inbox로 라우팅하는지
 - Artifact writer가 최종 Markdown을 갱신하는지
+- Client session store가 active/recent run을 기록하고 stale run을 안전하게 표시하는지
 
 ### E2E or smoke test
 
@@ -51,8 +52,9 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 3. Mock runner integration test
 4. Intervention API integration test
 5. CLI adapter command parsing / fake CLI integration test
-6. Chat UI smoke test
-7. Firebase adapter test는 optional
+6. Session persistence store/API test
+7. Chat UI state persistence smoke test
+8. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -62,6 +64,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 테스트가 생성한 `.agentboard` state는 테스트 종료 후 삭제한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
+- Browser localStorage 기반 UI state는 서버 audit state와 분리해 테스트한다.
 
 ## 예시: JSONL store test
 
@@ -140,6 +143,9 @@ it('persists user intervention and delivers it to target agent', async () => {
 - [ ] 사용자 intervention 전송 가능
 - [ ] agent가 intervention을 내부 기록 또는 결과에 반영
 - [ ] final artifact 표시
+- [ ] 루트 페이지에서 active/recent run resume 가능
+- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, target, draft 복원
+- [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨
 
 ## 테스트 명령 예시

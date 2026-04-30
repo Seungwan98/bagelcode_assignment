@@ -62,6 +62,15 @@ http://localhost:3000
 9. 채팅방에서 전송 완료 상태를 확인하고, Logs에서 내부 수신 처리와 전달 이벤트를 확인한다.
 10. 상단 `보고서 보기` 버튼을 눌러 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
 
+## Session resume 확인
+
+1. 첫 실행 시 브라우저가 session id를 자동 생성한다.
+2. run을 만든 뒤 `/`로 돌아간다.
+3. 최근 run resume 카드가 표시되는지 확인한다.
+4. resume 카드에서 기존 `/runs/<runId>`로 이동한다.
+5. ChatRoom에서 선택 agent, Logs/보고서 drawer, intervention target/draft 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
+6. dev server를 재시작한 뒤 오래된 `running` run이 있으면 resume snapshot에서 stale 상태로 안전하게 표시되는지 확인한다.
+
 ## 예상 생성 파일
 
 실행 중 local state가 생성된다.
@@ -75,6 +84,7 @@ http://localhost:3000
   agents/<agentId>/inbox.jsonl
   agents/user/inbox.jsonl
   artifacts/final-report.md
+.agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
 `.agentboard/`는 `.gitignore` 대상이다.

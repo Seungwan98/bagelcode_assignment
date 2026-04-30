@@ -25,6 +25,52 @@ interface ProcessLogEntry {
   tone: 'normal' | 'route' | 'error';
 }
 
+const CLIENT_SESSION_STORAGE_KEY = 'agentboard:clientSessionId';
+const LEGACY_CLIENT_SESSION_STORAGE_KEYS = ['agentboard.clientSessionId', 'agentboard:client-session-id'];
+
+interface ChatRoomUiState {
+  selectedAgentId?: string;
+  selectedLogId?: string | null;
+  showArtifact?: boolean;
+  showLogs?: boolean;
+  to?: string;
+  body?: string;
+}
+
+function chatRoomUiStateKey(runId: string): string {
+  return `agentboard:run-ui:${runId}`;
+}
+
+function readChatRoomUiState(runId: string): ChatRoomUiState {
+  try {
+    const raw = window.localStorage.getItem(chatRoomUiStateKey(runId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<ChatRoomUiState>;
+    return {
+      selectedAgentId: typeof parsed.selectedAgentId === 'string' ? parsed.selectedAgentId : undefined,
+      selectedLogId: typeof parsed.selectedLogId === 'string' || parsed.selectedLogId === null ? parsed.selectedLogId : undefined,
+      showArtifact: typeof parsed.showArtifact === 'boolean' ? parsed.showArtifact : undefined,
+      showLogs: typeof parsed.showLogs === 'boolean' ? parsed.showLogs : undefined,
+      to: typeof parsed.to === 'string' ? parsed.to : undefined,
+      body: typeof parsed.body === 'string' ? parsed.body : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeChatRoomUiState(runId: string, state: ChatRoomUiState): void {
+  window.localStorage.setItem(chatRoomUiStateKey(runId), JSON.stringify(state));
+}
+
+function readClientSessionId(): string | undefined {
+  const existing = [CLIENT_SESSION_STORAGE_KEY, ...LEGACY_CLIENT_SESSION_STORAGE_KEYS]
+    .map((key) => window.localStorage.getItem(key)?.trim())
+    .find(Boolean);
+  if (existing) window.localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, existing);
+  return existing;
+}
+
 function isRunSnapshot(value: unknown): value is RunSnapshot {
   return Boolean(value && typeof value === 'object' && 'ok' in value && (value as { ok: unknown }).ok === true);
 }
@@ -222,6 +268,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [body, setBody] = useState('');
   const [sendStatus, setSendStatus] = useState('');
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const restoredUiStateRef = useRef(false);
 
   const agentMap = useMemo(() => new Map(runState.agents.map((agent) => [agent.id, agent])), [runState.agents]);
   const selectedAgent = agentMap.get(selectedAgentId) ?? runState.agents[0];
@@ -268,6 +315,43 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     () => processLogs.find((log) => log.id === selectedLogId) ?? null,
     [processLogs, selectedLogId],
   );
+
+  useEffect(() => {
+    const saved = readChatRoomUiState(runId);
+    if (saved.selectedAgentId && initialState.agents.some((agent) => agent.id === saved.selectedAgentId)) {
+      setSelectedAgentId(saved.selectedAgentId);
+    }
+    if (saved.selectedLogId !== undefined) setSelectedLogId(saved.selectedLogId);
+    if (saved.showArtifact !== undefined) setShowArtifact(saved.showArtifact);
+    if (saved.showLogs !== undefined) setShowLogs(saved.showLogs);
+    if (saved.to && (saved.to === 'all' || initialState.agents.some((agent) => agent.id === saved.to))) {
+      setTo(saved.to);
+    }
+    if (saved.body !== undefined) setBody(saved.body);
+    restoredUiStateRef.current = true;
+  }, [initialState.agents, runId]);
+
+  useEffect(() => {
+    if (!restoredUiStateRef.current) return;
+    writeChatRoomUiState(runId, {
+      selectedAgentId,
+      selectedLogId,
+      showArtifact,
+      showLogs,
+      to,
+      body,
+    });
+  }, [body, runId, selectedAgentId, selectedLogId, showArtifact, showLogs, to]);
+
+  useEffect(() => {
+    const clientSessionId = readClientSessionId();
+    if (!clientSessionId) return;
+    void fetch(`/api/sessions/${encodeURIComponent(clientSessionId)}/active-run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId }),
+    }).catch(() => undefined);
+  }, [runId]);
 
   async function refreshSnapshot() {
     const response = await fetch(`/api/runs/${runId}`, { cache: 'no-store' });
