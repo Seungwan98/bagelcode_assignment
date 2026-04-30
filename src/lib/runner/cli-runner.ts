@@ -241,11 +241,18 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
 
 export async function acknowledgeCliIntervention(runId: string, to: string, body: string): Promise<void> {
   const target = to === 'all' ? 'planner' : to;
-  await sendMessage({
+  await appendEvent(runId, {
+    id: createId('evt'),
     runId,
-    from: target,
-    to: 'user',
-    kind: 'ack',
-    body: `CLI mode에서 사용자 지시를 수신했습니다. 다음 agent prompt 또는 최종 artifact에 반영합니다: ${body}`,
+    type: 'message.sent',
+    actor: target,
+    payload: {
+      internal: true,
+      kind: 'ack',
+      to: target,
+      summary: '사용자 지시를 실행 맥락에 저장했습니다.',
+      interventionPreview: body.slice(0, 160),
+    },
+    createdAt: nowIso(),
   });
 }

@@ -138,7 +138,7 @@ it('persists user intervention and delivers it to target agent', async () => {
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
 - [ ] 사용자 intervention 전송 가능
-- [ ] agent가 intervention을 ack 또는 반영
+- [ ] agent가 intervention을 내부 기록 또는 결과에 반영
 - [ ] final artifact 표시
 - [ ] `.agentboard/`가 gitignore됨
 

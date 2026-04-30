@@ -67,6 +67,14 @@ function isAgentToAgentMessage(message: AgentMessage, agentMap: Map<string, Agen
   return isAgentActor(agentMap, message.from) && isAgentActor(agentMap, message.to);
 }
 
+function isOperationalAck(message: AgentMessage, agentMap: Map<string, AgentState>): boolean {
+  return message.kind === 'ack' && isAgentActor(agentMap, message.from) && message.to === 'user';
+}
+
+function isTranscriptMessage(message: AgentMessage, agentMap: Map<string, AgentState>): boolean {
+  return !isAgentToAgentMessage(message, agentMap) && !isOperationalAck(message, agentMap);
+}
+
 function formatTime(value?: string): string {
   if (!value) return '-';
   return new Date(value).toLocaleTimeString();
@@ -83,12 +91,13 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   const message = messageFromEvent(event);
   if (message) {
     const route = isAgentToAgentMessage(message, agentMap);
+    const ack = isOperationalAck(message, agentMap);
     return {
       id: event.id,
       createdAt: event.createdAt,
-      title: messageHint(message, agentMap),
-      detail: event.type,
-      body: message.body,
+      title: ack ? `${actorLabel(agentMap, message.from)} 지시 수신 처리` : messageHint(message, agentMap),
+      detail: ack ? '내부 확인' : event.type,
+      body: ack ? undefined : message.body,
       route,
       tone: route ? 'route' : message.kind === 'error' ? 'error' : 'normal',
     };
@@ -102,6 +111,8 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   const to = eventPayloadText(event, 'to');
   const errorMessage = eventPayloadText(event, 'message');
   const artifact = eventPayloadText(event, 'artifact');
+  const summary = eventPayloadText(event, 'summary');
+  const interventionPreview = eventPayloadText(event, 'interventionPreview');
 
   if (event.type === 'agent.started') {
     return {
@@ -129,6 +140,17 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
       createdAt: event.createdAt,
       title: `message delivered${to ? ` → ${actorLabel(agentMap, to)}` : ''}`,
       detail: messageId ?? event.type,
+      route: false,
+      tone: 'normal',
+    };
+  }
+  if (event.type === 'message.sent' && event.payload.internal === true) {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: `${actorLabel(agentMap, event.actor)} 지시 수신 처리`,
+      detail: summary ?? '내부 이벤트',
+      body: interventionPreview,
       route: false,
       tone: 'normal',
     };
@@ -192,7 +214,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const latestEvent = events.at(-1);
   const selectedAgentMessages = useMemo(
     () => messages
-      .filter((message) => message.from === selectedAgentId || message.to === selectedAgentId)
+      .filter((message) => message.kind !== 'ack' && (message.from === selectedAgentId || message.to === selectedAgentId))
       .slice(-4)
       .reverse(),
     [messages, selectedAgentId],
@@ -217,7 +239,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     [messages, selectedAgentId],
   );
   const visibleMessages = useMemo(
-    () => messages.filter((message) => !isAgentToAgentMessage(message, agentMap)),
+    () => messages.filter((message) => isTranscriptMessage(message, agentMap)),
     [messages, agentMap],
   );
   const agentRouteCount = useMemo(
@@ -282,7 +304,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
       return;
     }
     setBody('');
-    setSendStatus(`전송 완료: ${data.messageId}`);
+    setSendStatus('전송 완료');
     await refreshSnapshot();
   }
 

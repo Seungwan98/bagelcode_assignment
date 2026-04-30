@@ -147,7 +147,7 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 1. 사용자가 하단 채팅 composer에서 지시를 입력한다.
 2. API가 `user_intervention` 메시지를 생성한다.
 3. Message Bus가 대상 agent 또는 `all`에게 라우팅한다.
-4. Agent가 지시를 ack하고 후속 결과에 반영한다.
+4. Runner가 내부 수신 처리 이벤트를 남기고 후속 결과에 반영한다.
 5. 채팅 transcript와 보고서 drawer 상태가 갱신된다.
 
 ## Event log 기준
