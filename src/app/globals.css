@@ -151,6 +151,7 @@ pre {
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto auto auto 1fr auto;
+  position: relative;
   background: rgba(16, 24, 39, .88);
   border: 1px solid rgba(148, 163, 184, .22);
   border-radius: 30px;
@@ -174,6 +175,66 @@ pre {
 .badge.running { color: var(--warning); border-color: rgba(253, 230, 138, .35); }
 .badge.completed, .badge.done { color: var(--accent-2); border-color: rgba(167, 243, 208, .35); }
 .badge.failed, .badge.error { color: var(--danger); border-color: rgba(253, 164, 175, .35); }
+.logs-drawer {
+  position: absolute;
+  top: 92px;
+  right: 18px;
+  bottom: 118px;
+  z-index: 20;
+  width: min(540px, calc(100% - 36px));
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(125, 211, 252, .28);
+  border-radius: 24px;
+  background: rgba(7, 11, 22, .96);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .48);
+  backdrop-filter: blur(18px);
+}
+.logs-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.logs-drawer-header h2 { margin: 3px 0 4px; font-size: 1.15rem; }
+.logs-drawer-header p { margin: 0; font-size: .86rem; }
+.logs-drawer-header button { padding: .48rem .78rem; font-size: .82rem; }
+.process-log-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.process-log-item {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid rgba(148, 163, 184, .42);
+  border-radius: 16px;
+  background: rgba(255,255,255,.045);
+}
+.process-log-item.route { border-left-color: var(--accent); background: rgba(125, 211, 252, .08); }
+.process-log-item.error { border-left-color: var(--danger); background: rgba(127, 29, 29, .28); }
+.process-log-item span { color: var(--muted); font-size: .72rem; font-weight: 800; }
+.process-log-item strong { font-size: .9rem; }
+.process-log-item em { color: var(--accent-2); font-size: .75rem; font-style: normal; }
+.process-log-item p {
+  display: -webkit-box;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.empty-log { margin: 0; }
 .agent-rail { display: flex; gap: 10px; overflow-x: auto; padding: 12px 24px; border-bottom: 1px solid var(--line); background: rgba(7,11,22,.35); }
 .agent-pill {
   min-width: 190px;
@@ -357,6 +418,7 @@ pre {
   .chat-app { height: 100vh; border-radius: 0; border: 0; }
   .chat-topbar { display: grid; padding: 18px 16px 12px; }
   .chat-topbar-actions { justify-content: flex-start; min-width: 0; }
+  .logs-drawer { top: 118px; right: 10px; bottom: 150px; width: calc(100% - 20px); }
   .agent-rail { padding: 10px 16px; }
   .agent-detail-panel { grid-template-columns: 1fr; padding: 12px 16px; }
   .agent-detail-feed { grid-template-columns: 1fr; }

@@ -12,6 +12,16 @@ interface RunSnapshot {
   artifact: string;
 }
 
+interface ProcessLogEntry {
+  id: string;
+  createdAt: string;
+  title: string;
+  detail: string;
+  body?: string;
+  route: boolean;
+  tone: 'normal' | 'route' | 'error';
+}
+
 function isRunSnapshot(value: unknown): value is RunSnapshot {
   return Boolean(value && typeof value === 'object' && 'ok' in value && (value as { ok: unknown }).ok === true);
 }
@@ -49,9 +59,109 @@ function messageHint(message: AgentMessage, agentMap: Map<string, AgentState>): 
   return `${from} → ${to} · ${message.kind}`;
 }
 
+function isAgentActor(agentMap: Map<string, AgentState>, actor: string): boolean {
+  return agentMap.has(actor);
+}
+
+function isAgentToAgentMessage(message: AgentMessage, agentMap: Map<string, AgentState>): boolean {
+  return isAgentActor(agentMap, message.from) && isAgentActor(agentMap, message.to);
+}
+
 function formatTime(value?: string): string {
   if (!value) return '-';
   return new Date(value).toLocaleTimeString();
+}
+
+function eventPayloadText(event: RunEvent, key: string): string | undefined {
+  const value = event.payload[key];
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return undefined;
+}
+
+function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>): ProcessLogEntry {
+  const message = messageFromEvent(event);
+  if (message) {
+    const route = isAgentToAgentMessage(message, agentMap);
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: messageHint(message, agentMap),
+      detail: event.type,
+      body: message.body,
+      route,
+      tone: route ? 'route' : message.kind === 'error' ? 'error' : 'normal',
+    };
+  }
+
+  const role = eventPayloadText(event, 'role');
+  const adapter = eventPayloadText(event, 'adapter');
+  const status = eventPayloadText(event, 'status');
+  const agentId = eventPayloadText(event, 'agentId');
+  const messageId = eventPayloadText(event, 'messageId');
+  const to = eventPayloadText(event, 'to');
+  const errorMessage = eventPayloadText(event, 'message');
+  const artifact = eventPayloadText(event, 'artifact');
+
+  if (event.type === 'agent.started') {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: `${actorLabel(agentMap, event.actor)} started`,
+      detail: adapter ? `${role ?? event.actor} · ${adapter}` : role ?? event.actor,
+      route: false,
+      tone: 'normal',
+    };
+  }
+  if (event.type === 'agent.status_changed') {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: `${actorLabel(agentMap, agentId ?? event.actor)} status`,
+      detail: status ?? event.type,
+      route: false,
+      tone: status === 'failed' ? 'error' : 'normal',
+    };
+  }
+  if (event.type === 'message.delivered') {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: `message delivered${to ? ` → ${actorLabel(agentMap, to)}` : ''}`,
+      detail: messageId ?? event.type,
+      route: false,
+      tone: 'normal',
+    };
+  }
+  if (event.type === 'error') {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: `${actorLabel(agentMap, event.actor)} error`,
+      detail: errorMessage ?? event.type,
+      route: false,
+      tone: 'error',
+    };
+  }
+  if (event.type === 'artifact.updated') {
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+      title: 'artifact updated',
+      detail: artifact ?? 'final-report.md',
+      route: false,
+      tone: 'normal',
+    };
+  }
+
+  return {
+    id: event.id,
+    createdAt: event.createdAt,
+    title: event.type,
+    detail: event.actor,
+    route: false,
+    tone: 'normal',
+  };
 }
 
 function agentSituation(agent: AgentState): string {
@@ -69,6 +179,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [artifact, setArtifact] = useState('');
   const [showArtifact, setShowArtifact] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
   const [to, setTo] = useState('engineer');
@@ -104,6 +215,18 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const selectedReceivedCount = useMemo(
     () => messages.filter((message) => message.to === selectedAgentId).length,
     [messages, selectedAgentId],
+  );
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => !isAgentToAgentMessage(message, agentMap)),
+    [messages, agentMap],
+  );
+  const agentRouteCount = useMemo(
+    () => messages.filter((message) => isAgentToAgentMessage(message, agentMap)).length,
+    [messages, agentMap],
+  );
+  const processLogs = useMemo(
+    () => events.map((event) => processLogFromEvent(event, agentMap)).reverse(),
+    [events, agentMap],
   );
 
   async function refreshSnapshot() {
@@ -175,6 +298,9 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           <div className="chat-topbar-actions">
             <span className={`badge ${runState.run.status}`}>{runState.run.status}</span>
             <span className={`badge ${connected ? 'completed' : ''}`}>{connected ? 'live' : 'reconnecting'}</span>
+            <button className="badge badge-button" type="button" onClick={() => setShowLogs((current) => !current)}>
+              {showLogs ? 'Logs 닫기' : `Logs ${processLogs.length}`}
+            </button>
             {artifact ? (
               <button className="badge badge-button" type="button" onClick={() => setShowArtifact((current) => !current)}>
                 {showArtifact ? '보고서 닫기' : '보고서 보기'}
@@ -183,6 +309,33 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
             <Link className="badge" href="/">새 대화</Link>
           </div>
         </header>
+
+        {showLogs ? (
+          <aside className="logs-drawer" aria-label="에이전트 전달 로그">
+            <div className="logs-drawer-header">
+              <div>
+                <span className="kicker">Process Logs</span>
+                <h2>Agent handoff logs</h2>
+                <p>에이전트 간 전달 {agentRouteCount}건 · 전체 이벤트 {processLogs.length}건</p>
+              </div>
+              <button className="secondary" type="button" onClick={() => setShowLogs(false)}>닫기</button>
+            </div>
+            {processLogs.length ? (
+              <ol className="process-log-list">
+                {processLogs.map((log) => (
+                  <li className={`process-log-item ${log.tone}`} key={log.id}>
+                    <span>{formatTime(log.createdAt)}</span>
+                    <strong>{log.title}</strong>
+                    <em>{log.detail}</em>
+                    {log.body ? <p>{log.body}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="empty-log">아직 기록된 로그가 없습니다.</p>
+            )}
+          </aside>
+        ) : null}
 
         <div className="agent-rail" aria-label="에이전트 상태">
           {runState.agents.map((agent) => (
@@ -262,15 +415,22 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
         <div className="chat-transcript" ref={transcriptRef}>
           <div className="chat-bubble system">
             <span className="bubble-meta">system · run.created</span>
-            <p>협업 대화가 시작되었습니다. 에이전트 메시지와 사용자 개입이 이 대화창에 순서대로 표시됩니다.</p>
+            <p>협업 대화가 시작되었습니다. 사용자에게 직접 보이는 메시지는 이 대화창에, 에이전트 간 전달 과정은 우측 상단 Logs에 표시됩니다.</p>
           </div>
 
-          {messages.map((message) => (
+          {visibleMessages.map((message) => (
             <article className={bubbleClass(message)} key={message.id}>
               <span className="bubble-meta">{messageHint(message, agentMap)} · {new Date(message.createdAt).toLocaleTimeString()}</span>
               <p>{message.body}</p>
             </article>
           ))}
+
+          {!visibleMessages.length && messages.length ? (
+            <div className="chat-bubble system">
+              <span className="bubble-meta">system · process logs</span>
+              <p>에이전트 간 전달 과정은 우측 상단 Logs 버튼에서 확인할 수 있습니다.</p>
+            </div>
+          ) : null}
 
           {!messages.length ? (
             <div className="chat-bubble system typing">
