@@ -54,6 +54,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [artifact, setArtifact] = useState('');
+  const [showArtifact, setShowArtifact] = useState(false);
   const [connected, setConnected] = useState(false);
   const [to, setTo] = useState('engineer');
   const [body, setBody] = useState('');
@@ -94,7 +95,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, artifact, runState.run.status]);
+  }, [messages.length, runState.run.status]);
 
   async function sendIntervention() {
     if (!body.trim()) return;
@@ -126,6 +127,11 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           <div className="chat-topbar-actions">
             <span className={`badge ${runState.run.status}`}>{runState.run.status}</span>
             <span className={`badge ${connected ? 'completed' : ''}`}>{connected ? 'live' : 'reconnecting'}</span>
+            {artifact ? (
+              <button className="badge badge-button" type="button" onClick={() => setShowArtifact((current) => !current)}>
+                {showArtifact ? '보고서 닫기' : '보고서 보기'}
+              </button>
+            ) : null}
             <Link className="badge" href="/">새 대화</Link>
           </div>
         </header>
@@ -152,13 +158,6 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
             </article>
           ))}
 
-          {artifact ? (
-            <article className="chat-bubble artifact">
-              <span className="bubble-meta">artifact · final-report.md</span>
-              <pre>{artifact}</pre>
-            </article>
-          ) : null}
-
           {!messages.length ? (
             <div className="chat-bubble system typing">
               <span className="typing-dot" />
@@ -170,6 +169,15 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
         </div>
 
         <footer className="chat-composer-bar">
+          {showArtifact && artifact ? (
+            <section className="artifact-drawer" aria-label="최종 보고서">
+              <div className="artifact-drawer-header">
+                <span>final-report.md</span>
+                <button className="secondary" type="button" onClick={() => setShowArtifact(false)}>닫기</button>
+              </div>
+              <pre>{artifact}</pre>
+            </section>
+          ) : null}
           <div className="composer-target-row">
             <select value={to} onChange={(event) => setTo(event.target.value)} aria-label="메시지 대상">
               <option value="all">All Agents</option>

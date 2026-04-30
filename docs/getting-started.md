@@ -59,7 +59,7 @@ http://localhost:3000
    ```
 
 8. 채팅방에서 `user.intervened`와 agent ack를 확인한다.
-9. 대화 마지막 artifact 버블에서 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
+9. 상단 `보고서 보기` 버튼을 눌러 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
 
 ## 예상 생성 파일
 

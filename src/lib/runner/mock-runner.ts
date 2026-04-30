@@ -110,7 +110,7 @@ async function runScript(runId: string): Promise<void> {
       : '기본 mock 협업 흐름이 완료되었습니다.',
   });
 
-  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n\n## Agent Collaboration Evidence\n\n- Planner → Engineer: MVP 구현 지시\n- Engineer → Planner: 구현 범위 progress\n- Engineer → Reviewer: result 전달\n- Reviewer → Planner: 최종 검토\n\n## User Intervention\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Chat UI, SSE message stream, JSONL message bus, mock runner, user intervention composer, artifact bubble을 우선 구현한다.\n`;
+  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n\n## Agent Collaboration Evidence\n\n- Planner → Engineer: MVP 구현 지시\n- Engineer → Planner: 구현 범위 progress\n- Engineer → Reviewer: result 전달\n- Reviewer → Planner: 최종 검토\n\n## User Intervention\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Chat UI, SSE message stream, JSONL message bus, mock runner, user intervention composer, 보고서 drawer를 우선 구현한다.\n`;
   await writeArtifact(runId, finalReport, 'reviewer');
 
   await updateAgentStatus(runId, 'planner', 'done');

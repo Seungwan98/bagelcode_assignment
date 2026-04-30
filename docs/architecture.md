@@ -19,7 +19,7 @@ AgentBoard는 여러 AI 에이전트가 하나의 작업을 분담하고, 사용
       ├─ Agent 상태 rail 관찰
       ├─ 메시지 버블 관찰
       ├─ 하단 composer로 User Intervention 전송
-      └─ Artifact 버블 확인
+      └─ 보고서 drawer 확인
 
 Next.js App
   ├─ Page / React Components
@@ -54,7 +54,7 @@ Local State Store
 주요 구성:
 
 - `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택
-- `ChatRoom`: run header, agent rail, 메시지 transcript, artifact bubble, intervention composer를 한 화면에서 제공
+- `ChatRoom`: run header, agent rail, 메시지 transcript, 보고서 drawer, intervention composer를 한 화면에서 제공
 
 ### Next.js API Layer
 
@@ -146,7 +146,7 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 2. API가 `user_intervention` 메시지를 생성한다.
 3. Message Bus가 대상 agent 또는 `all`에게 라우팅한다.
 4. Agent가 지시를 ack하고 후속 결과에 반영한다.
-5. 채팅 transcript와 artifact bubble이 갱신된다.
+5. 채팅 transcript와 보고서 drawer 상태가 갱신된다.
 
 ## Event log 기준
 
@@ -188,7 +188,7 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 5. SSE 기반 ChatRoom transcript
 6. Agent 상태 rail
 7. User Intervention composer
-8. Artifact bubble
+8. 보고서 drawer
 9. README 실행 흐름
 10. Optional Firebase/CLI adapter
 

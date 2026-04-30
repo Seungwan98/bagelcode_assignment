@@ -5,7 +5,7 @@ AgentBoard는 여러 AI 에이전트가 메시지를 주고받는 협업 과정�
 ## 핵심 증명
 
 - Planner, Engineer, Reviewer mock agents가 structured message를 교환합니다.
-- 채팅 화면이 SSE(EventSource)로 agent/user message와 artifact를 실시간 표시합니다.
+- 채팅 화면이 SSE(EventSource)로 agent/user message를 실시간 표시하고, 최종 보고서는 별도 보기 버튼으로 확인합니다.
 - 사용자가 특정 agent 또는 `all`에 intervention을 전송할 수 있습니다.
 - 사용자 intervention은 message/event log에 저장되고 agent ack 및 final artifact에 반영됩니다.
 - 기본 mock mode는 Firebase key나 실제 AI CLI 없이 실행됩니다.
@@ -43,7 +43,7 @@ http://localhost:3000
    ```
 
 6. 채팅방에서 `user.intervened`와 agent `ack` 메시지를 확인합니다.
-7. 대화 마지막의 artifact 버블에서 `final-report.md` 결과를 확인합니다.
+7. 상단의 `보고서 보기` 버튼으로 `final-report.md` 결과를 확인합니다.
 
 ## API
 
