@@ -131,8 +131,8 @@ it('persists user intervention and delivers it to target agent', async () => {
 
 구현 뒤 수동으로 확인한다.
 
-- [ ] `pnpm install` 성공
-- [ ] `pnpm dev` 성공
+- [ ] `npm install` 성공
+- [ ] `npm run dev` 성공
 - [ ] mock run 생성 가능
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
@@ -146,10 +146,9 @@ it('persists user intervention and delivers it to target agent', async () => {
 프로젝트 스크립트가 생기면 아래 명령을 기준으로 맞춘다.
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
+npm run typecheck
+npm test
+npm run build
 ```
 
-E2E가 아직 없으면 `pnpm test:e2e`는 문서상 optional로 둔다.
+E2E가 아직 없으면 수동 QA checklist를 기준으로 검증한다.

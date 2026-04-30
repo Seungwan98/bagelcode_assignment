@@ -5,17 +5,17 @@
 ### 증상
 
 ```text
-pnpm dev
-command not found: pnpm
+npm run dev
+command not found: npm
 ```
 
 ### 해결
 
-pnpm을 설치하거나 corepack을 활성화한다.
+Node.js와 npm 설치 상태를 확인한다.
 
 ```bash
-corepack enable
-corepack prepare pnpm@latest --activate
+node -v
+npm -v
 ```
 
 ## Dashboard가 비어 있음

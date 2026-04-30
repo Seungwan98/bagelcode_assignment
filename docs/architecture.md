@@ -40,9 +40,8 @@ Local State Store
       ├─ state.json
       ├─ events.jsonl
       ├─ messages.jsonl
-      ├─ user-inbox.jsonl
       ├─ agents/<agentId>/inbox.jsonl
-      ├─ agents/<agentId>/outbox.jsonl
+      ├─ agents/user/inbox.jsonl
       └─ artifacts/final-report.md
 ```
 
@@ -55,7 +54,7 @@ Local State Store
 주요 구성:
 
 - `RunCreateForm`: 과제 입력과 실행 모드 선택
-- `RunHeader`: run 제목, 상태, 제어 버튼
+- `/runs/<runId>` page header: run 제목, 상태, 새 run 링크
 - `AgentCardList`: 에이전트별 역할/상태/마지막 메시지
 - `EventTimeline`: SSE로 수신한 이벤트 표시
 - `InterventionComposer`: 사용자 지시 입력
@@ -94,7 +93,7 @@ Dashboard와 Runner 사이의 HTTP 경계다.
 
 - 메시지는 append-only로 저장한다.
 - `messages.jsonl`이 메시지 이력의 기준이다.
-- 각 agent inbox/outbox는 라우팅과 디버깅을 위한 파생 로그다.
+- 각 recipient inbox는 라우팅과 디버깅을 위한 파생 로그다.
 - 사용자 개입도 `from: "user"`인 메시지로 저장한다.
 
 ### Agent Adapters

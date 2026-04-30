@@ -15,6 +15,7 @@ build/
 coverage/
 playwright-report/
 test-results/
+*.tsbuildinfo
 
 # Runtime state and logs
 .agentboard/

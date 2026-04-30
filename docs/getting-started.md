@@ -8,8 +8,8 @@
 
 권장 환경:
 
-- Node.js 20 이상
-- pnpm
+- Node.js 20.9 이상
+- npm
 - macOS/Linux 권장
 
 Mock mode는 Firebase key, Claude/Codex/Gemini CLI 없이 실행되어야 한다.
@@ -19,13 +19,13 @@ Mock mode는 Firebase key, Claude/Codex/Gemini CLI 없이 실행되어야 한다
 프로젝트가 생성된 뒤 기본 설치 명령은 다음 형태를 따른다.
 
 ```bash
-pnpm install
+npm install
 ```
 
 ## 개발 서버 실행
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 브라우저에서 접속한다.
@@ -71,9 +71,8 @@ http://localhost:3000
   state.json
   events.jsonl
   messages.jsonl
-  user-inbox.jsonl
   agents/<agentId>/inbox.jsonl
-  agents/<agentId>/outbox.jsonl
+  agents/user/inbox.jsonl
   artifacts/final-report.md
 ```
 
@@ -90,7 +89,7 @@ AGENTBOARD_MODE=cli \
 AGENTBOARD_CODEX_CMD=codex \
 AGENTBOARD_CLAUDE_CMD=claude \
 AGENTBOARD_GEMINI_CMD=gemini \
-pnpm dev
+npm run dev
 ```
 
 CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
