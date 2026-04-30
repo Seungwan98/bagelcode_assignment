@@ -38,7 +38,7 @@ README 흐름이 실제로 되는지 검증한다.
 
 - 앱 실행
 - mock run 생성
-- timeline 업데이트 확인
+- 채팅 메시지 업데이트 확인
 - 사용자 intervention 전송
 - final artifact 확인
 
@@ -51,7 +51,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 3. Mock runner integration test
 4. Intervention API integration test
 5. CLI adapter command parsing / fake CLI integration test
-6. Dashboard smoke test
+6. Chat UI smoke test
 7. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙

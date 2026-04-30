@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'AgentBoard',
-  description: 'Observable multi-agent collaboration dashboard',
+  description: 'Chat-style multi-agent collaboration workspace',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -18,7 +18,7 @@ node -v
 npm -v
 ```
 
-## Dashboard가 비어 있음
+## 채팅방이 비어 있음
 
 ### 가능한 원인
 
@@ -35,7 +35,7 @@ cat .agentboard/runs/<runId>/events.jsonl
 cat .agentboard/runs/<runId>/messages.jsonl
 ```
 
-## Timeline이 실시간으로 갱신되지 않음
+## 채팅 메시지가 실시간으로 갱신되지 않음
 
 ### 가능한 원인
 
@@ -45,7 +45,7 @@ cat .agentboard/runs/<runId>/messages.jsonl
 
 ### 해결
 
-- Network tab에서 SSE response header 확인
+- 브라우저 Network tab에서 SSE response header 확인
 - 서버 로그 확인
 - 페이지 새로고침
 - `events.jsonl`에 이벤트가 append되는지 확인
@@ -57,7 +57,7 @@ cat .agentboard/runs/<runId>/messages.jsonl
 - `POST /api/runs/<runId>/interventions` 요청 실패
 - target agent id가 잘못됨
 - Message Bus가 target inbox에 쓰지 못함
-- Mock runner가 user inbox polling을 하지 않음
+- Runner가 user intervention을 아직 최종 artifact에 반영하지 않음
 
 ### 확인
 

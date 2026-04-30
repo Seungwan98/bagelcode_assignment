@@ -17,7 +17,7 @@ AgentBoard에 새로운 agent, adapter, storage, UI 기능을 추가할 때 지�
 예: `researcher` agent 추가
 
 1. `AgentRole` union에 role을 추가한다.
-2. Dashboard agent card 표시 이름을 추가한다.
+2. Chat UI agent rail 표시 이름을 추가한다.
 3. Mock runner script에 role 동작을 추가한다.
 4. Message Bus routing test를 추가한다.
 5. Artifact에 해당 role의 기여가 표시되게 한다.
@@ -110,12 +110,12 @@ Agent 간 메시지를 graph로 보여주는 기능.
 
 - Event/message selector
 - `MessageGraph` component
-- Dashboard layout의 optional panel
+- Chat UI의 optional panel 또는 bubble
 
 검증:
 
 - 같은 `messages.jsonl` 데이터를 사용한다.
-- graph가 없더라도 timeline은 계속 동작한다.
+- graph가 없더라도 채팅 메시지는 계속 동작한다.
 
 ### Approval gate
 
@@ -140,7 +140,7 @@ Agent 간 메시지를 graph로 보여주는 기능.
 - 기존 route로 충분하지 않은가?
 - event log에 어떤 event를 남기는가?
 - 실패 응답 구조는 일관적인가?
-- Dashboard에서 재시도 가능한가?
+- Chat UI에서 재시도 가능한가?
 
 권장 에러 응답:
 

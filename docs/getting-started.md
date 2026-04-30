@@ -36,30 +36,30 @@ http://localhost:3000
 
 ## 첫 실행 시나리오
 
-1. `/` 페이지에서 “Start mock collaboration” 또는 run 생성 폼을 연다.
+1. `/` 페이지에서 채팅 시작 composer를 연다.
 2. 과제 brief를 입력한다.
 
    ```text
-   여러 AI 에이전트가 협업하는 Web Dashboard MVP 계획을 만들어줘.
+   여러 AI 에이전트가 협업하는 Chat MVP 계획을 만들어줘.
    ```
 
 3. 실행 모드는 `mock`을 선택한다.
-4. Run을 시작한다.
-5. `/runs/<runId>` Dashboard로 이동한다.
-6. Event Timeline에서 다음 흐름을 확인한다.
+4. `대화 시작` 버튼을 누른다.
+5. `/runs/<runId>` 채팅방으로 이동한다.
+6. 채팅 버블에서 다음 흐름을 확인한다.
    - `run.started`
    - `planner -> engineer` 메시지
    - `engineer -> planner` progress/result 메시지
    - `reviewer` 검토 메시지
    - `artifact.updated`
-7. Intervention 입력창에 사용자 지시를 보낸다.
+7. 하단 채팅 입력창에 사용자 지시를 보낸다.
 
    ```text
    구현 범위를 ASAP MVP로 줄이고 README 실행성을 우선해줘.
    ```
 
-8. Timeline에서 `user.intervened`와 agent ack를 확인한다.
-9. Artifact Panel에서 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
+8. 채팅방에서 `user.intervened`와 agent ack를 확인한다.
+9. 대화 마지막 artifact 버블에서 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
 
 ## 예상 생성 파일
 
@@ -114,8 +114,8 @@ Mock mode에서는 Firebase 설정이 없어도 된다.
 
 처음 실행한 사람이 아래를 확인하면 성공이다.
 
-- Dashboard에서 2개 이상의 agent가 보인다.
-- Agent 간 메시지가 timeline에 표시된다.
+- 채팅 상단 agent rail에서 2개 이상의 agent가 보인다.
+- Agent 간 메시지가 채팅 버블로 표시된다.
 - 사용자가 지시를 보낼 수 있다.
 - Agent가 사용자 지시를 ack하거나 결과에 반영한다.
 - 최종 artifact를 볼 수 있다.

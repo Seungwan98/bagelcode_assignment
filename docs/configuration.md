@@ -121,7 +121,7 @@ FIREBASE_PRIVATE_KEY=
 
 ## CLI adapter config
 
-Optional real agent adapter용 명령이다. `AGENTBOARD_MODE=cli` 또는 Dashboard에서 `cli` mode를 선택하면
+Optional real agent adapter용 명령이다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면
 Planner, Engineer, Reviewer가 각자 매핑된 로컬 CLI 명령을 한 번씩 실행하고 출력 결과를 메시지로 전달한다.
 
 ```bash

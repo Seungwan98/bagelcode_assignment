@@ -2,24 +2,24 @@
 
 ## 목적
 
-AgentBoard는 여러 AI 에이전트가 하나의 작업을 분담하고, 사용자가 Web Dashboard에서 협업 과정을 관찰·개입할 수 있게 만드는 로컬 실행형 MVP다.
+AgentBoard는 여러 AI 에이전트가 하나의 작업을 분담하고, 사용자가 채팅형 UI에서 협업 과정을 관찰·개입할 수 있게 만드는 로컬 실행형 MVP다.
 
 핵심 증명은 다음 세 가지다.
 
 1. 두 개 이상의 에이전트가 구조화된 메시지를 주고받는다.
-2. 사용자는 Dashboard에서 에이전트 상태, 메시지, 산출물을 실시간으로 관찰한다.
+2. 사용자는 Chat UI에서 에이전트 상태, 메시지, 산출물을 실시간으로 관찰한다.
 3. 사용자는 실행 중 특정 에이전트 또는 전체 팀에 지시를 추가할 수 있다.
 
 ## 전체 흐름
 
 ```text
 사용자
-  └─ Browser Dashboard
-      ├─ Run 생성
-      ├─ Agent 상태 관찰
-      ├─ Event Timeline 관찰
-      ├─ User Intervention 전송
-      └─ Artifact 확인
+  └─ Browser Chat UI
+      ├─ 대화 생성
+      ├─ Agent 상태 rail 관찰
+      ├─ 메시지 버블 관찰
+      ├─ 하단 composer로 User Intervention 전송
+      └─ Artifact 버블 확인
 
 Next.js App
   ├─ Page / React Components
@@ -47,22 +47,18 @@ Local State Store
 
 ## 모듈 구조
 
-### Browser Dashboard
+### Browser Chat UI
 
 사용자가 직접 보는 UI다.
 
 주요 구성:
 
-- `RunCreateForm`: 과제 입력과 실행 모드 선택
-- `/runs/<runId>` page header: run 제목, 상태, 새 run 링크
-- `AgentCardList`: 에이전트별 역할/상태/마지막 메시지
-- `EventTimeline`: SSE로 수신한 이벤트 표시
-- `InterventionComposer`: 사용자 지시 입력
-- `ArtifactPanel`: 최종 Markdown 산출물 표시
+- `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택
+- `ChatRoom`: run header, agent rail, 메시지 transcript, artifact bubble, intervention composer를 한 화면에서 제공
 
 ### Next.js API Layer
 
-Dashboard와 Runner 사이의 HTTP 경계다.
+Chat UI와 Runner 사이의 HTTP 경계다.
 
 주요 책임:
 
@@ -125,7 +121,7 @@ Browser -> POST /api/runs -> Next.js API -> run directory 생성 -> runner 시�
 1. 사용자가 `/`에서 과제 brief를 입력한다.
 2. `POST /api/runs`가 `run.json`, `state.json`을 만든다.
 3. 서버가 mock runner를 기본 실행한다.
-4. Dashboard가 `/runs/<runId>`로 이동한다.
+4. Chat UI가 `/runs/<runId>`로 이동한다.
 5. Browser가 `GET /api/runs/<runId>/events`에 `EventSource`로 연결한다.
 
 ### 2. Agent 간 협업
@@ -143,14 +139,14 @@ Planner -> Message Bus -> Engineer -> Message Bus -> Reviewer -> Artifact
 ### 3. 사용자 개입
 
 ```text
-Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox -> Agent response -> Timeline
+Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox -> Agent response -> Chat transcript
 ```
 
-1. 사용자가 Dashboard에서 지시를 입력한다.
+1. 사용자가 하단 채팅 composer에서 지시를 입력한다.
 2. API가 `user_intervention` 메시지를 생성한다.
 3. Message Bus가 대상 agent 또는 `all`에게 라우팅한다.
 4. Agent가 지시를 ack하고 후속 결과에 반영한다.
-5. Timeline과 artifact가 갱신된다.
+5. 채팅 transcript와 artifact bubble이 갱신된다.
 
 ## Event log 기준
 
@@ -189,10 +185,10 @@ Browser -> POST /api/runs/<runId>/interventions -> Message Bus -> Agent inbox ->
 2. JSONL store 작성
 3. Run 생성 API
 4. Mock runner와 Message Bus
-5. SSE Timeline
-6. Agent 상태 카드
-7. User Intervention API/UI
-8. Artifact Panel
+5. SSE 기반 ChatRoom transcript
+6. Agent 상태 rail
+7. User Intervention composer
+8. Artifact bubble
 9. README 실행 흐름
 10. Optional Firebase/CLI adapter
 
