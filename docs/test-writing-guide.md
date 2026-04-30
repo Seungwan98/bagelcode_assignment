@@ -50,8 +50,9 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 2. JSONL store test
 3. Mock runner integration test
 4. Intervention API integration test
-5. Dashboard smoke test
-6. CLI/Firebase adapter test는 optional
+5. CLI adapter command parsing / fake CLI integration test
+6. Dashboard smoke test
+7. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 

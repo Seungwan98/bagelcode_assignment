@@ -54,6 +54,13 @@ interface AgentAdapter {
 
 ## CLI adapter 확장
 
+현재 구현된 `CliAgentAdapter`는 local command를 `spawn(..., { shell: false })`로 실행하고,
+stdout을 agent message로 저장한다. `cli` run은 다음 순서로 진행한다.
+
+```text
+Planner CLI -> Engineer CLI -> Reviewer CLI -> final artifact
+```
+
 새 CLI를 붙일 때는 다음을 지킨다.
 
 - 명령은 allowlist에 추가한다.
@@ -61,6 +68,13 @@ interface AgentAdapter {
 - 사용자 입력을 shell command string에 직접 붙이지 않는다.
 - CLI output은 raw log와 structured message로 나눠 저장한다.
 - 실패 시 `error` event를 남긴다.
+
+추가 설정이 필요한 CLI는 command spec에 인자를 포함하거나 prompt mode를 바꾼다.
+
+```bash
+AGENTBOARD_CODEX_CMD="codex exec"
+AGENTBOARD_CODEX_PROMPT_MODE=append-arg
+```
 
 ## Firebase persistence 추가
 

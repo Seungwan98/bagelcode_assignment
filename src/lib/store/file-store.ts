@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { AgentMessage, AgentRole, AgentState, Artifact, Run, RunEvent, RunMode, RunState } from '../protocol/types';
+import { resolveAdapterForRole } from '../runner/agent-config';
 import { createId, nowIso } from '../utils/ids';
 import { appendJsonl, readJsonl } from '../utils/jsonl';
 
@@ -36,12 +37,12 @@ export function artifactPath(runId: string): string {
   return join(runDir(runId), 'artifacts', 'final-report.md');
 }
 
-export function createAgentStates(roles: AgentRole[] = DEFAULT_AGENTS): AgentState[] {
+export function createAgentStates(roles: AgentRole[] = DEFAULT_AGENTS, mode: RunMode = 'mock'): AgentState[] {
   return roles.map((role) => ({
     id: role,
     role,
     displayName: DISPLAY_NAMES[role],
-    adapter: 'mock',
+    adapter: resolveAdapterForRole(role, mode),
     status: 'idle',
   }));
 }
@@ -69,7 +70,7 @@ export async function createRun(input: { title: string; brief: string; mode: Run
     createdAt,
     updatedAt: createdAt,
   };
-  const state: RunState = { run, agents: createAgentStates(input.agents) };
+  const state: RunState = { run, agents: createAgentStates(input.agents, input.mode) };
   await mkdir(runDir(run.id), { recursive: true });
   await mkdir(join(runDir(run.id), 'artifacts'), { recursive: true });
   await Promise.all(state.agents.map((agent) => mkdir(join(runDir(run.id), 'agents', agent.id), { recursive: true })));

@@ -80,19 +80,29 @@ http://localhost:3000
 
 ## Optional CLI mode
 
-실제 AI CLI 연동은 MVP 기본 실행 경로가 아니다. 로컬에 CLI가 있고 adapter 구현이 끝난 뒤에만 사용한다.
+실제 AI CLI 연동은 기본 실행 경로가 아니다. 로컬에 CLI가 있고 환경변수를 설정한 뒤 사용한다.
 
 예시:
 
 ```bash
 AGENTBOARD_MODE=cli \
+AGENTBOARD_PLANNER_ADAPTER=codex \
+AGENTBOARD_ENGINEER_ADAPTER=claude \
+AGENTBOARD_REVIEWER_ADAPTER=gemini \
 AGENTBOARD_CODEX_CMD=codex \
 AGENTBOARD_CLAUDE_CMD=claude \
 AGENTBOARD_GEMINI_CMD=gemini \
+AGENTBOARD_CLI_PROMPT_MODE=stdin \
 npm run dev
 ```
 
 CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+
+CLI가 prompt를 argument로 받는 경우:
+
+```bash
+AGENTBOARD_CLI_PROMPT_MODE=append-arg npm run dev
+```
 
 ## Optional Firebase mode
 

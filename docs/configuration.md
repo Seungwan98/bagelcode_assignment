@@ -121,12 +121,49 @@ FIREBASE_PRIVATE_KEY=
 
 ## CLI adapter config
 
-Optional real agent adapter용 명령이다.
+Optional real agent adapter용 명령이다. `AGENTBOARD_MODE=cli` 또는 Dashboard에서 `cli` mode를 선택하면
+Planner, Engineer, Reviewer가 각자 매핑된 로컬 CLI 명령을 한 번씩 실행하고 출력 결과를 메시지로 전달한다.
 
 ```bash
+AGENTBOARD_PLANNER_ADAPTER=codex
+AGENTBOARD_ENGINEER_ADAPTER=claude
+AGENTBOARD_REVIEWER_ADAPTER=gemini
 AGENTBOARD_CODEX_CMD=codex
 AGENTBOARD_CLAUDE_CMD=claude
 AGENTBOARD_GEMINI_CMD=gemini
+AGENTBOARD_CLI_PROMPT_MODE=stdin
+AGENTBOARD_CLI_ALLOWLIST=codex,claude,gemini
+AGENTBOARD_CLI_TIMEOUT_MS=120000
+```
+
+지원 adapter 값:
+
+| 값 | 설명 |
+| --- | --- |
+| `codex` | `AGENTBOARD_CODEX_CMD`로 실행 |
+| `claude` | `AGENTBOARD_CLAUDE_CMD`로 실행 |
+| `gemini` | `AGENTBOARD_GEMINI_CMD`로 실행 |
+
+prompt 전달 방식:
+
+| 값 | 설명 |
+| --- | --- |
+| `stdin` | 기본값. prompt를 process stdin으로 전달 |
+| `append-arg` | prompt를 마지막 CLI argument로 전달 |
+
+CLI별 prompt mode override:
+
+```bash
+AGENTBOARD_CODEX_PROMPT_MODE=append-arg
+AGENTBOARD_CLAUDE_PROMPT_MODE=append-arg
+AGENTBOARD_GEMINI_PROMPT_MODE=append-arg
+```
+
+명령에 기본 옵션이 필요하면 quote로 감싼다.
+
+```bash
+AGENTBOARD_CLAUDE_CMD="claude -p"
+AGENTBOARD_GEMINI_CMD="gemini -p"
 ```
 
 보안 규칙:
@@ -134,6 +171,7 @@ AGENTBOARD_GEMINI_CMD=gemini
 - command allowlist를 사용한다.
 - `spawn(command, args, { shell: false })` 형태를 우선한다.
 - 사용자 입력을 shell 문자열로 이어붙이지 않는다.
+- `|`, `;`, `&`, redirect 같은 shell metacharacter가 있는 command spec은 거부한다.
 
 ## Local state config
 

@@ -103,8 +103,16 @@ Dashboard와 Runner 사이의 HTTP 경계다.
 지원 대상:
 
 - `MockAgentAdapter`: README 기본 데모. 외부 key 없이 deterministic하게 동작한다.
-- `CliAgentAdapter`: optional. 로컬 `codex`, `claude`, `gemini` CLI를 실행한다.
+- `CliAgentAdapter`: optional. 로컬 `codex`, `claude`, `gemini` CLI를 `shell: false`로 실행하고 stdout을 agent message로 저장한다.
 - Firebase/Cloud adapter: optional future work. MVP 기본 경로를 깨면 안 된다.
+
+CLI mode 기본 role 매핑:
+
+| Role | 기본 adapter | command env |
+| --- | --- | --- |
+| `planner` | `codex` | `AGENTBOARD_CODEX_CMD` |
+| `engineer` | `claude` | `AGENTBOARD_CLAUDE_CMD` |
+| `reviewer` | `gemini` | `AGENTBOARD_GEMINI_CMD` |
 
 ## Runtime sequence
 

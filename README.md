@@ -75,4 +75,17 @@ npm run build
 ## Optional integrations
 
 - Firebase config는 `docs/configuration.md`를 참고하세요.
-- 실제 `codex`, `claude`, `gemini` CLI adapter는 optional 확장입니다.
+- 실제 `codex`, `claude`, `gemini` CLI adapter는 `cli` mode에서 사용할 수 있습니다.
+
+CLI mode 예시:
+
+```bash
+AGENTBOARD_MODE=cli \
+AGENTBOARD_CODEX_CMD="codex" \
+AGENTBOARD_CLAUDE_CMD="claude" \
+AGENTBOARD_GEMINI_CMD="gemini" \
+npm run dev
+```
+
+CLI가 prompt를 인자로 받는 방식이면 `AGENTBOARD_CLI_PROMPT_MODE=append-arg` 또는
+`AGENTBOARD_<CODEX|CLAUDE|GEMINI>_PROMPT_MODE=append-arg`를 설정합니다.
