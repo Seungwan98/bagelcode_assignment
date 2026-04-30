@@ -3,6 +3,7 @@ import { sendMessage } from '@/lib/bus/message-bus';
 import { createId, nowIso } from '@/lib/utils/ids';
 
 const activeRuns = new Set<string>();
+const cancelledRuns = new Set<string>();
 const timers = new Map<string, NodeJS.Timeout[]>();
 
 function delayMs(ms: number): number {
@@ -25,6 +26,7 @@ function registerTimer(runId: string, timer: NodeJS.Timeout): void {
 }
 
 export function stopMockRun(runId: string): void {
+  cancelledRuns.add(runId);
   for (const timer of timers.get(runId) ?? []) clearTimeout(timer);
   timers.delete(runId);
   activeRuns.delete(runId);
@@ -32,12 +34,22 @@ export function stopMockRun(runId: string): void {
 
 export function startMockRun(runId: string): void {
   if (activeRuns.has(runId)) return;
+  cancelledRuns.delete(runId);
   activeRuns.add(runId);
   const timer = setTimeout(() => {
     void runScript(runId).finally(() => activeRuns.delete(runId));
   }, delayMs(50));
   timer.unref?.();
   registerTimer(runId, timer);
+}
+
+async function shouldStop(runId: string): Promise<boolean> {
+  if (cancelledRuns.has(runId)) return true;
+  try {
+    return (await readState(runId)).run.status === 'stopped';
+  } catch {
+    return true;
+  }
 }
 
 async function runScript(runId: string): Promise<void> {
@@ -63,8 +75,10 @@ async function runScript(runId: string): Promise<void> {
     });
   }
 
+  if (await shouldStop(runId)) return;
   await updateAgentStatus(runId, 'planner', 'thinking');
   await sleep(500);
+  if (await shouldStop(runId)) return;
   await sendMessage({
     runId,
     from: 'planner',
@@ -74,8 +88,10 @@ async function runScript(runId: string): Promise<void> {
     requiresAck: true,
   });
 
+  if (await shouldStop(runId)) return;
   await updateAgentStatus(runId, 'engineer', 'thinking');
   await sleep(900);
+  if (await shouldStop(runId)) return;
   await sendMessage({
     runId,
     from: 'engineer',
@@ -85,6 +101,7 @@ async function runScript(runId: string): Promise<void> {
   });
 
   await sleep(900);
+  if (await shouldStop(runId)) return;
   await sendMessage({
     runId,
     from: 'engineer',
@@ -93,8 +110,10 @@ async function runScript(runId: string): Promise<void> {
     body: 'Mock runner가 planner, engineer, reviewer 메시지를 생성하고 최종 artifact를 갱신할 수 있습니다.',
   });
 
+  if (await shouldStop(runId)) return;
   await updateAgentStatus(runId, 'reviewer', 'thinking');
   await sleep(2500);
+  if (await shouldStop(runId)) return;
   const interventions = (await readMessages(runId)).filter((message) => message.kind === 'user_intervention');
   const interventionSummary = interventions.length
     ? interventions.map((message, index) => `${index + 1}. ${message.body}`).join('\n')
@@ -111,8 +130,10 @@ async function runScript(runId: string): Promise<void> {
   });
 
   const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n\n## Agent Collaboration Evidence\n\n- Planner → Engineer: MVP 구현 지시\n- Engineer → Planner: 구현 범위 progress\n- Engineer → Reviewer: result 전달\n- Reviewer → Planner: 최종 검토\n\n## User Intervention\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Chat UI, SSE message stream, JSONL message bus, mock runner, user intervention composer, 보고서 drawer를 우선 구현한다.\n`;
+  if (await shouldStop(runId)) return;
   await writeArtifact(runId, finalReport, 'reviewer');
 
+  if (await shouldStop(runId)) return;
   await updateAgentStatus(runId, 'planner', 'done');
   await updateAgentStatus(runId, 'engineer', 'done');
   await updateAgentStatus(runId, 'reviewer', 'done');

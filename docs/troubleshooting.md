@@ -50,23 +50,23 @@ cat .agentboard/runs/<runId>/messages.jsonl
 - 페이지 새로고침
 - `events.jsonl`에 이벤트가 append되는지 확인
 
-## 사용자 개입이 반영되지 않음
+## 진행 중 취소가 반영되지 않음
 
 ### 가능한 원인
 
-- `POST /api/runs/<runId>/interventions` 요청 실패
-- target agent id가 잘못됨
-- Message Bus가 target inbox에 쓰지 못함
-- Runner가 user intervention을 아직 최종 artifact에 반영하지 않음
+- `POST /api/runs/<runId>/control` 요청 실패
+- runId가 잘못됨
+- mock/CLI runner stop 함수가 호출되지 않음
+- 이미 terminal 상태인 run을 보고 있음
 
 ### 확인
 
 ```bash
-cat .agentboard/runs/<runId>/messages.jsonl
-cat .agentboard/runs/<runId>/agents/<agentId>/inbox.jsonl
+cat .agentboard/runs/<runId>/state.json
+cat .agentboard/runs/<runId>/events.jsonl
 ```
 
-`from: "user"`, `kind: "user_intervention"` 메시지가 있어야 한다.
+`status: "stopped"`와 `control.stopped` event가 있어야 한다.
 
 ## Final artifact가 생성되지 않음
 

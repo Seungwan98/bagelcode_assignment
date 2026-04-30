@@ -33,8 +33,6 @@ interface ChatRoomUiState {
   selectedLogId?: string | null;
   showArtifact?: boolean;
   showLogs?: boolean;
-  to?: string;
-  body?: string;
 }
 
 function chatRoomUiStateKey(runId: string): string {
@@ -51,8 +49,6 @@ function readChatRoomUiState(runId: string): ChatRoomUiState {
       selectedLogId: typeof parsed.selectedLogId === 'string' || parsed.selectedLogId === null ? parsed.selectedLogId : undefined,
       showArtifact: typeof parsed.showArtifact === 'boolean' ? parsed.showArtifact : undefined,
       showLogs: typeof parsed.showLogs === 'boolean' ? parsed.showLogs : undefined,
-      to: typeof parsed.to === 'string' ? parsed.to : undefined,
-      body: typeof parsed.body === 'string' ? parsed.body : undefined,
     };
   } catch {
     return {};
@@ -254,6 +250,21 @@ function agentSituation(agent: AgentState): string {
   return '아직 작업을 시작하지 않았거나 다음 차례를 기다리는 중입니다.';
 }
 
+function isRunInProgress(status: RunState['run']['status']): boolean {
+  return status === 'created' || status === 'running' || status === 'paused';
+}
+
+function runProgressLabel(runState: RunState, latestEvent?: RunEvent): string {
+  const activeAgent = runState.agents.find((agent) => agent.status === 'thinking' || agent.status === 'waiting');
+  if (activeAgent) return `${activeAgent.displayName} 작업 중`;
+  if (latestEvent?.actor && runState.agents.some((agent) => agent.id === latestEvent.actor)) {
+    return `${actorLabel(new Map(runState.agents.map((agent) => [agent.id, agent])), latestEvent.actor)} 최근 작업`;
+  }
+  if (runState.run.status === 'created') return '에이전트 작업 준비 중';
+  if (runState.run.status === 'paused') return '작업 일시정지 상태';
+  return '에이전트 작업 진행 중';
+}
+
 export function ChatRoom({ initialState, runId }: { initialState: RunState; runId: string }) {
   const [runState, setRunState] = useState(initialState);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -264,9 +275,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
-  const [to, setTo] = useState('engineer');
-  const [body, setBody] = useState('');
-  const [sendStatus, setSendStatus] = useState('');
+  const [controlStatus, setControlStatus] = useState('');
   const transcriptRef = useRef<HTMLDivElement>(null);
   const restoredUiStateRef = useRef(false);
 
@@ -315,6 +324,8 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     () => processLogs.find((log) => log.id === selectedLogId) ?? null,
     [processLogs, selectedLogId],
   );
+  const runInProgress = isRunInProgress(runState.run.status);
+  const progressLabel = runProgressLabel(runState, latestEvent);
 
   useEffect(() => {
     const saved = readChatRoomUiState(runId);
@@ -324,10 +335,6 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     if (saved.selectedLogId !== undefined) setSelectedLogId(saved.selectedLogId);
     if (saved.showArtifact !== undefined) setShowArtifact(saved.showArtifact);
     if (saved.showLogs !== undefined) setShowLogs(saved.showLogs);
-    if (saved.to && (saved.to === 'all' || initialState.agents.some((agent) => agent.id === saved.to))) {
-      setTo(saved.to);
-    }
-    if (saved.body !== undefined) setBody(saved.body);
     restoredUiStateRef.current = true;
   }, [initialState.agents, runId]);
 
@@ -338,10 +345,8 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
       selectedLogId,
       showArtifact,
       showLogs,
-      to,
-      body,
     });
-  }, [body, runId, selectedAgentId, selectedLogId, showArtifact, showLogs, to]);
+  }, [runId, selectedAgentId, selectedLogId, showArtifact, showLogs]);
 
   useEffect(() => {
     const clientSessionId = readClientSessionId();
@@ -401,23 +406,23 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [selectedLogId]);
 
-  async function sendIntervention() {
-    if (!body.trim()) return;
-    setSendStatus('전송 중...');
-    const response = await fetch(`/api/runs/${runId}/interventions`, {
+  async function stopRun() {
+    if (!runInProgress) return;
+    setControlStatus('취소 요청 중...');
+    const response = await fetch(`/api/runs/${runId}/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, body, priority: 'normal' }),
+      body: JSON.stringify({ action: 'stop' }),
     });
-    const data = await response.json();
     if (!response.ok) {
-      setSendStatus(data?.error?.message ?? '전송 실패');
+      const data = await response.json().catch(() => null);
+      setControlStatus(data?.error?.message ?? '취소 실패');
       return;
     }
-    setBody('');
-    setSendStatus('전송 완료');
+    setControlStatus('작업을 취소했습니다.');
     await refreshSnapshot();
   }
+
 
   return (
     <main className="chat-shell">
@@ -430,6 +435,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           </div>
           <div className="chat-topbar-actions">
             <span className={`badge ${runState.run.status}`}>{runState.run.status}</span>
+            {runInProgress ? <span className="badge progress-badge active">{progressLabel}</span> : null}
             <span className={`badge ${connected ? 'completed' : ''}`}>{connected ? 'live' : 'reconnecting'}</span>
             <button className="badge badge-button" type="button" onClick={() => setShowLogs((current) => !current)}>
               {showLogs ? 'Logs 닫기' : `Logs ${processLogs.length}`}
@@ -645,24 +651,27 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
             </section>
           ) : null}
           <div className="composer-target-row">
-            <select value={to} onChange={(event) => setTo(event.target.value)} aria-label="메시지 대상">
-              <option value="all">All Agents</option>
-              {runState.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.displayName}</option>)}
-            </select>
-            <span>{latestEvent ? `마지막 이벤트: ${latestEvent.type}` : '이벤트 수신 대기 중'}</span>
+            <span className={`run-progress-indicator ${runInProgress ? 'active' : ''}`}>
+              {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : '이벤트 수신 대기 중'}
+            </span>
+            {!runInProgress ? <span>새 요청은 첫 화면에서 다시 시작합니다.</span> : null}
           </div>
-          <div className="chat-input-row">
-            <textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder="에이전트에게 지시를 입력하세요. 예: README 실행성을 우선해줘."
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void sendIntervention();
-              }}
-            />
-            <button disabled={!body.trim()} onClick={() => void sendIntervention()}>전송</button>
-          </div>
-          {sendStatus ? <p className="composer-status">{sendStatus}</p> : null}
+          {runInProgress ? (
+            <div className="chat-input-row active-run-controls">
+              <textarea
+                aria-label="작업 진행 상태"
+                disabled
+                value={`${progressLabel}입니다. 진행 중에는 추가 전송 대신 Logs와 에이전트 상태를 확인하거나 작업을 취소할 수 있습니다.`}
+              />
+              <button className="danger" onClick={() => void stopRun()} type="button">취소</button>
+            </div>
+          ) : (
+            <div className="terminal-run-actions">
+              <p>이 run은 {runState.run.status} 상태입니다. 새 작업은 첫 화면에서 새 메시지로 시작하세요.</p>
+              <Link className="button-link" href="/">새 요청 시작</Link>
+            </div>
+          )}
+          {controlStatus ? <p className="composer-status">{controlStatus}</p> : null}
         </footer>
       </section>
     </main>

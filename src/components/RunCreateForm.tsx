@@ -56,9 +56,14 @@ function resumeDescription(run: ClientSessionRunSummary): string {
   return '최근 완료된 대화 기록을 다시 열 수 있습니다.';
 }
 
+function titleFromBrief(brief: string): string {
+  const compact = brief.trim().replace(/\s+/g, ' ');
+  if (!compact) return 'AgentBoard collaboration run';
+  return compact.length > 42 ? `${compact.slice(0, 42)}…` : compact;
+}
+
 export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
   const router = useRouter();
-  const [title, setTitle] = useState('BagelCode multi-agent assignment');
   const [brief, setBrief] = useState('여러 AI 에이전트가 협업하는 Chat MVP 계획과 구현 결과를 만들어줘.');
   const [mode, setMode] = useState<SelectableRunMode>(initialMode);
   const [clientSessionId, setClientSessionId] = useState('');
@@ -98,10 +103,17 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
     setSubmitting(true);
     setError('');
     try {
+      const trimmedBrief = brief.trim();
       const response = await fetch('/api/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, brief, mode, agents: ['planner', 'engineer', 'reviewer'], clientSessionId: sessionId || undefined }),
+        body: JSON.stringify({
+          title: titleFromBrief(trimmedBrief),
+          brief: trimmedBrief,
+          mode,
+          agents: ['planner', 'engineer', 'reviewer'],
+          clientSessionId: sessionId || undefined,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error?.message ?? 'Run 생성 실패');
@@ -114,11 +126,11 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
   }
 
   return (
-    <form className="start-chat-card" onSubmit={(event) => { event.preventDefault(); void startRun(); }}>
+    <form className="start-chat-card chatbot-start-card" onSubmit={(event) => { event.preventDefault(); void startRun(); }}>
       <div className="start-chat-header">
-        <span className="kicker">New conversation</span>
-        <h2>에이전트 팀에게 바로 요청하기</h2>
-        <p>Planner, Engineer, Reviewer가 하나의 채팅방에서 순차적으로 응답합니다.</p>
+        <span className="kicker">Start with chat</span>
+        <h2>무엇을 만들지 바로 입력하세요</h2>
+        <p>첫 메시지를 보내면 Planner, Engineer, Reviewer가 순서대로 작업하고 진행 상황은 채팅방에서 관찰합니다.</p>
       </div>
 
       {isSessionLoading ? <p className="hint">최근 대화 기록을 확인하는 중입니다...</p> : null}
@@ -136,12 +148,25 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
         </section>
       ) : null}
 
-      <label className="compact-field">
-        <span>대화 제목</span>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} />
-      </label>
+      <section className="starter-chat-window" aria-label="첫 요청 입력">
+        <div className="chat-bubble system starter-bubble">
+          <span className="bubble-meta">AgentBoard · ready</span>
+          <p>요청을 보내면 에이전트 팀이 작업을 시작합니다. 진행 중에는 추가 전송 대신 상태 확인과 취소만 가능합니다.</p>
+        </div>
+        <label className="chat-start-composer">
+          <span className="sr-only">첫 요청</span>
+          <textarea
+            value={brief}
+            onChange={(event) => setBrief(event.target.value)}
+            placeholder="에이전트 팀에게 맡길 작업을 입력하세요."
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void startRun();
+            }}
+          />
+        </label>
+      </section>
 
-      <fieldset className="mode-switch" aria-label="실행 모드 선택">
+      <fieldset className="mode-switch compact-mode-switch" aria-label="실행 모드 선택">
         <legend className="sr-only">실행 모드 선택</legend>
         {MODE_OPTIONS.map((option) => (
           <label className={mode === option.value ? 'selected' : ''} key={option.value} htmlFor={`run-mode-${option.value}`}>
@@ -159,18 +184,6 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
         ))}
       </fieldset>
 
-      <label className="chat-start-composer">
-        <span className="sr-only">과제 brief</span>
-        <textarea
-          value={brief}
-          onChange={(event) => setBrief(event.target.value)}
-          placeholder="무엇을 만들지 에이전트 팀에게 요청하세요."
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void startRun();
-          }}
-        />
-      </label>
-
       {mode === 'cli' ? <p className="hint">CLI mode는 AGENTBOARD_CODEX_CMD=&quot;codex exec&quot; 설정이 필요하며 세 역할 모두 Codex로 실행됩니다.</p> : null}
       {clientSessionId ? <p className="hint">이 브라우저의 session id로 최근 run을 로컬에 연결합니다.</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
@@ -178,7 +191,7 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
       <div className="start-actions">
         <span>⌘/Ctrl + Enter로 시작</span>
         <button disabled={isSubmitting || !brief.trim()} type="submit">
-          {isSubmitting ? '대화 생성 중...' : '대화 시작'}
+          {isSubmitting ? '작업 시작 중...' : '에이전트 작업 시작'}
         </button>
       </div>
     </form>

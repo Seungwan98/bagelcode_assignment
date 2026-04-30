@@ -2,7 +2,7 @@
 
 ## 목적
 
-처음 사용하는 사람이 AgentBoard MVP를 빠르게 실행하고, 과제 핵심 조건인 에이전트 간 메시징과 사용자 관찰/개입을 확인하는 방법을 설명한다.
+처음 사용하는 사람이 AgentBoard MVP를 빠르게 실행하고, 에이전트 간 메시징, 사용자 관찰, 진행 중 취소 흐름을 확인하는 방법을 설명한다.
 
 ## 전제 조건
 
@@ -36,7 +36,7 @@ http://localhost:3000
 
 ## 첫 실행 시나리오
 
-1. `/` 페이지에서 채팅 시작 composer를 연다.
+1. `/` 페이지에서 첫 요청 composer를 확인한다.
 2. 과제 brief를 입력한다.
 
    ```text
@@ -44,7 +44,7 @@ http://localhost:3000
    ```
 
 3. 실행 모드는 `mock`을 선택한다.
-4. `대화 시작` 버튼을 누른다.
+4. `에이전트 작업 시작` 버튼을 누른다.
 5. `/runs/<runId>` 채팅방으로 이동한다.
 6. 상단 우측 `Logs` 버튼에서 다음 흐름을 확인하고, 로그 항목을 눌러 전체 payload를 팝업으로 확인한다.
    - `run.started`
@@ -53,14 +53,9 @@ http://localhost:3000
    - `reviewer` 검토 메시지
    - `artifact.updated`
 7. 상단 agent rail에서 agent를 눌러 현재 상태, 최근 메시지, 최근 이벤트를 확인한다.
-8. 하단 채팅 입력창에 사용자 지시를 보낸다.
-
-   ```text
-   구현 범위를 ASAP MVP로 줄이고 README 실행성을 우선해줘.
-   ```
-
-9. 채팅방에서 전송 완료 상태를 확인하고, Logs에서 내부 수신 처리와 전달 이벤트를 확인한다.
-10. 상단 `보고서 보기` 버튼을 눌러 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
+8. 진행 중 하단 입력창이 잠기고 현재 작업 indicator와 `취소` 버튼이 보이는지 확인한다.
+9. 취소 테스트가 필요하면 `취소`를 눌러 status가 `stopped`로 바뀌는지 확인한다.
+10. 완료된 run에서는 상단 `보고서 보기` 버튼을 눌러 최종 Markdown 결과를 확인한다.
 
 ## Session resume 확인
 
@@ -68,7 +63,7 @@ http://localhost:3000
 2. run을 만든 뒤 `/`로 돌아간다.
 3. 최근 run resume 카드가 표시되는지 확인한다.
 4. resume 카드에서 기존 `/runs/<runId>`로 이동한다.
-5. ChatRoom에서 선택 agent, Logs/보고서 drawer, intervention target/draft 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
+5. ChatRoom에서 선택 agent, Logs/보고서 drawer 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
 6. dev server를 재시작한 뒤 오래된 `running` run이 있으면 resume snapshot에서 stale 상태로 안전하게 표시되는지 확인한다.
 
 ## 예상 생성 파일
@@ -126,6 +121,6 @@ Mock mode에서는 Firebase 설정이 없어도 된다.
 - 채팅 상단 agent rail에서 2개 이상의 agent가 보인다.
 - Agent를 클릭하면 해당 agent의 현재 상태와 최근 활동이 보인다.
 - Agent 간 메시지 전달 과정이 Logs drawer에 표시된다.
-- 사용자가 지시를 보낼 수 있다.
-- Agent가 사용자 지시를 내부 기록 또는 결과에 반영한다.
+- 진행 중에는 추가 전송이 잠기고 취소 버튼이 보인다.
+- 취소하면 run이 `stopped` 상태로 마무리된다.
 - 최종 artifact를 볼 수 있다.

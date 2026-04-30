@@ -533,6 +533,63 @@ pre {
 .artifact-drawer-header button { padding: .45rem .72rem; font-size: .8rem; }
 
 
+
+.chatbot-start-card { gap: 16px; }
+.starter-chat-window {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 28px;
+  background: rgba(7, 11, 22, .42);
+  padding: 14px;
+}
+.starter-bubble { justify-self: start; text-align: left; }
+.compact-mode-switch { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+.progress-badge.active,
+.run-progress-indicator.active {
+  color: var(--warning);
+  border-color: rgba(253, 230, 138, .38);
+  background: rgba(253, 230, 138, .08);
+}
+.run-progress-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+.run-progress-indicator.active::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--warning);
+  box-shadow: 0 0 0 5px rgba(253, 230, 138, .1);
+  content: '';
+  animation: pulse 1.2s infinite ease-in-out;
+}
+.active-run-controls textarea {
+  color: var(--muted);
+  background: rgba(255,255,255,.035);
+}
+.terminal-run-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255,255,255,.04);
+  padding: 12px;
+}
+.terminal-run-actions p { margin: 0; font-size: .9rem; }
+.button-link {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5cc8ff, #9ef5ce);
+  color: #06101f;
+  font-weight: 900;
+  padding: .72rem 1rem;
+}
+
 @media (max-width: 760px) {
   .landing-shell { width: min(100% - 20px, 980px); padding: 28px 0; }
   .resume-card { display: grid; }
@@ -553,6 +610,8 @@ pre {
   .chat-transcript { padding: 18px 14px; }
   .chat-bubble { max-width: 94%; }
   .chat-input-row { grid-template-columns: 1fr; }
+  .terminal-run-actions { display: grid; }
+  .button-link { text-align: center; }
   .composer-target-row { align-items: stretch; flex-direction: column; }
   .composer-target-row select { max-width: none; }
 }

@@ -2,7 +2,7 @@
 
 ## 목적
 
-AgentBoard MVP에서 중요한 것은 “에이전트 간 메시징”, “사용자 관찰”, “사용자 개입”, “artifact 생성”이 깨지지 않는 것이다. 테스트는 이 증거를 보호하는 방향으로 작성한다.
+AgentBoard MVP에서 중요한 것은 “에이전트 간 메시징”, “사용자 관찰”, “진행 중 취소”, “artifact 생성”이 깨지지 않는 것이다. 테스트는 이 증거를 보호하는 방향으로 작성한다.
 
 ## 테스트 계층
 
@@ -40,7 +40,7 @@ README 흐름이 실제로 되는지 검증한다.
 - 앱 실행
 - mock run 생성
 - 채팅 메시지 업데이트 확인
-- 사용자 intervention 전송
+- 진행 중 입력 잠금과 취소 확인
 - final artifact 확인
 
 ## 우선순위
@@ -50,11 +50,12 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 1. Message Bus unit/integration test
 2. JSONL store test
 3. Mock runner integration test
-4. Intervention API integration test
-5. CLI adapter command parsing / fake CLI integration test
-6. Session persistence store/API test
-7. Chat UI state persistence smoke test
-8. Firebase adapter test는 optional
+4. Control stop API와 runner cancellation test
+5. Intervention API compatibility test
+6. CLI adapter command parsing / fake CLI integration test
+7. Session persistence store/API test
+8. Chat UI state persistence smoke test
+9. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -140,11 +141,11 @@ it('persists user intervention and delivers it to target agent', async () => {
 - [ ] mock run 생성 가능
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
-- [ ] 사용자 intervention 전송 가능
-- [ ] agent가 intervention을 내부 기록 또는 결과에 반영
+- [ ] 진행 중 composer가 잠기고 취소 버튼 표시
+- [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
 - [ ] final artifact 표시
 - [ ] 루트 페이지에서 active/recent run resume 가능
-- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, target, draft 복원
+- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨
 
