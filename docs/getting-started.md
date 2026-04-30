@@ -1,0 +1,112 @@
+# Getting Started
+
+## 목적
+
+처음 사용하는 사람이 AgentBoard MVP를 빠르게 실행하고, 과제 핵심 조건인 에이전트 간 메시징과 사용자 관찰/개입을 확인하는 방법을 설명한다.
+
+## 전제 조건
+
+권장 환경:
+
+- Node.js 20 이상
+- pnpm
+- macOS/Linux 권장
+
+Mock mode는 Firebase key, Claude/Codex/Gemini CLI 없이 실행되어야 한다.
+
+## 설치
+
+프로젝트가 생성된 뒤 기본 설치 명령은 다음 형태를 따른다.
+
+```bash
+pnpm install
+```
+
+## 개발 서버 실행
+
+```bash
+pnpm dev
+```
+
+브라우저에서 접속한다.
+
+```text
+http://localhost:3000
+```
+
+## 첫 실행 시나리오
+
+1. `/` 페이지에서 “Start mock collaboration” 또는 run 생성 폼을 연다.
+2. 과제 brief를 입력한다.
+
+   ```text
+   여러 AI 에이전트가 협업하는 Web Dashboard MVP 계획을 만들어줘.
+   ```
+
+3. 실행 모드는 `mock`을 선택한다.
+4. Run을 시작한다.
+5. `/runs/<runId>` Dashboard로 이동한다.
+6. Event Timeline에서 다음 흐름을 확인한다.
+   - `run.started`
+   - `planner -> engineer` 메시지
+   - `engineer -> planner` progress/result 메시지
+   - `reviewer` 검토 메시지
+   - `artifact.updated`
+7. Intervention 입력창에 사용자 지시를 보낸다.
+
+   ```text
+   구현 범위를 ASAP MVP로 줄이고 README 실행성을 우선해줘.
+   ```
+
+8. Timeline에서 `user.intervened`와 agent ack를 확인한다.
+9. Artifact Panel에서 최종 Markdown 결과가 사용자 지시를 반영했는지 확인한다.
+
+## 예상 생성 파일
+
+실행 중 local state가 생성된다.
+
+```text
+.agentboard/runs/<runId>/
+  run.json
+  state.json
+  events.jsonl
+  messages.jsonl
+  user-inbox.jsonl
+  agents/<agentId>/inbox.jsonl
+  agents/<agentId>/outbox.jsonl
+  artifacts/final-report.md
+```
+
+`.agentboard/`는 `.gitignore` 대상이다.
+
+## Optional CLI mode
+
+실제 AI CLI 연동은 MVP 기본 실행 경로가 아니다. 로컬에 CLI가 있고 adapter 구현이 끝난 뒤에만 사용한다.
+
+예시:
+
+```bash
+AGENTBOARD_MODE=cli \
+AGENTBOARD_CODEX_CMD=codex \
+AGENTBOARD_CLAUDE_CMD=claude \
+AGENTBOARD_GEMINI_CMD=gemini \
+pnpm dev
+```
+
+CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+
+## Optional Firebase mode
+
+Firebase는 선택 사항이다. 먼저 `configuration.md`를 보고 `.env.local` 또는 `config/firebase.local.json`을 준비한다.
+
+Mock mode에서는 Firebase 설정이 없어도 된다.
+
+## 성공 기준
+
+처음 실행한 사람이 아래를 확인하면 성공이다.
+
+- Dashboard에서 2개 이상의 agent가 보인다.
+- Agent 간 메시지가 timeline에 표시된다.
+- 사용자가 지시를 보낼 수 있다.
+- Agent가 사용자 지시를 ack하거나 결과에 반영한다.
+- 최종 artifact를 볼 수 있다.

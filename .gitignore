@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.*
+
+# Next.js / build output
+.next/
+out/
+dist/
+build/
+.turbo/
+.vercel/
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+
+# Runtime state and logs
+.agentboard/
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Firebase local config / credentials
+config/firebase.local.json
+config/firebase.admin.local.json
+config/firebase-service-account*.json
+firebase-debug.log
+.firestore/
+.runtimeconfig.json
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+# OMX runtime state (local orchestration only)
+.omx/
