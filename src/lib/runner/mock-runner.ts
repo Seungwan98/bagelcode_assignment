@@ -37,7 +37,10 @@ export function startMockRun(runId: string): void {
   cancelledRuns.delete(runId);
   activeRuns.add(runId);
   const timer = setTimeout(() => {
-    void runScript(runId).finally(() => activeRuns.delete(runId));
+    void runScript(runId).finally(() => {
+      activeRuns.delete(runId);
+      timers.delete(runId);
+    });
   }, delayMs(50));
   timer.unref?.();
   registerTimer(runId, timer);
@@ -52,6 +55,10 @@ async function shouldStop(runId: string): Promise<boolean> {
   }
 }
 
+function latestUserRequest(messages: Awaited<ReturnType<typeof readMessages>>): string {
+  return messages.filter((message) => message.kind === 'user_intervention').at(-1)?.body ?? '사용자 요청 없음';
+}
+
 async function runScript(runId: string): Promise<void> {
   await updateRunStatus(runId, 'running');
   await appendEvent(runId, {
@@ -64,6 +71,7 @@ async function runScript(runId: string): Promise<void> {
   });
 
   const state = await readState(runId);
+  const request = latestUserRequest(await readMessages(runId));
   for (const agent of state.agents) {
     await appendEvent(runId, {
       id: createId('evt'),
@@ -84,7 +92,7 @@ async function runScript(runId: string): Promise<void> {
     from: 'planner',
     to: 'engineer',
     kind: 'instruction',
-    body: 'AgentBoard MVP의 실행 가능한 수직 슬라이스를 설계하고 구현 포인트를 정리해줘.',
+    body: `사용자 요청을 분석해 실행 가능한 답변 방향을 정리해줘. 요청: ${request}`,
     requiresAck: true,
   });
 
@@ -97,7 +105,7 @@ async function runScript(runId: string): Promise<void> {
     from: 'engineer',
     to: 'planner',
     kind: 'progress',
-    body: 'Next.js Chat UI, SSE message stream, JSONL message bus, user intervention API를 MVP 범위로 잡았습니다.',
+    body: `요청을 구현 관점으로 정리했습니다. 핵심 요구: ${request}`,
   });
 
   await sleep(900);
@@ -107,7 +115,7 @@ async function runScript(runId: string): Promise<void> {
     from: 'engineer',
     to: 'reviewer',
     kind: 'result',
-    body: 'Mock runner가 planner, engineer, reviewer 메시지를 생성하고 최종 artifact를 갱신할 수 있습니다.',
+    body: 'Planner 분석을 바탕으로 답변 초안을 만들었습니다. 요청에 대한 실행 가능한 접근과 검증 관점을 포함합니다.',
   });
 
   if (await shouldStop(runId)) return;
@@ -124,12 +132,18 @@ async function runScript(runId: string): Promise<void> {
     from: 'reviewer',
     to: 'planner',
     kind: 'review',
-    body: interventions.length
-      ? '사용자 개입이 감지되어 최종 artifact에 반영했습니다.'
-      : '기본 mock 협업 흐름이 완료되었습니다.',
+    body: '요청에 대한 최종 답변을 준비했습니다.',
   });
 
-  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n\n## Agent Collaboration Evidence\n\n- Planner → Engineer: MVP 구현 지시\n- Engineer → Planner: 구현 범위 progress\n- Engineer → Reviewer: result 전달\n- Reviewer → Planner: 최종 검토\n\n## User Intervention\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Chat UI, SSE message stream, JSONL message bus, mock runner, user intervention composer, 보고서 drawer를 우선 구현한다.\n`;
+  await sendMessage({
+    runId,
+    from: 'reviewer',
+    to: 'user',
+    kind: 'result',
+    body: `요청하신 내용에 대해 Planner, Engineer, Reviewer가 검토했습니다.\n\n요청: ${request}\n\n답변: 현재 MVP 기준으로는 에이전트 팀이 요청을 분석하고, 구현 방향을 정리한 뒤, 검토 결과를 하나의 답변으로 제공합니다. 자세한 에이전트 간 전달 과정은 Logs에서 확인할 수 있습니다.`,
+  });
+
+  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n\n## Agent Collaboration Evidence\n\n- Planner → Engineer: MVP 구현 지시\n- Engineer → Planner: 구현 범위 progress\n- Engineer → Reviewer: result 전달\n- Reviewer → Planner: 최종 검토\n\n## Conversation Requests\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 사용자의 채팅 요청에 대해 Agent 팀의 분석, 구현 관점, 검토 결과를 답변으로 제공한다.\n`;
   if (await shouldStop(runId)) return;
   await writeArtifact(runId, finalReport, 'reviewer');
 
@@ -145,18 +159,5 @@ async function runScript(runId: string): Promise<void> {
     actor: 'system',
     payload: { artifact: 'final-report.md', interventions: interventions.length },
     createdAt: nowIso(),
-  });
-}
-
-export async function acknowledgeIntervention(runId: string, to: string, body: string): Promise<void> {
-  const target = to === 'all' ? 'planner' : to;
-  await updateAgentStatus(runId, target, 'thinking');
-  await sleep(200);
-  await sendMessage({
-    runId,
-    from: target,
-    to: 'user',
-    kind: 'ack',
-    body: `사용자 지시를 확인했습니다: ${body}`,
   });
 }

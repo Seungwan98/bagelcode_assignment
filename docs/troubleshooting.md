@@ -50,6 +50,25 @@ cat .agentboard/runs/<runId>/messages.jsonl
 - 페이지 새로고침
 - `events.jsonl`에 이벤트가 append되는지 확인
 
+
+## 사용자 요청에 Agents 답변이 생성되지 않음
+
+### 가능한 원인
+
+- `POST /api/runs/<runId>/interventions` 요청이 실패했다.
+- run이 아직 `running` 상태라 중복 요청이 409로 거절됐다.
+- Runner가 답변 생성 중 오류를 남겼다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/messages.jsonl
+cat .agentboard/runs/<runId>/events.jsonl
+cat .agentboard/runs/<runId>/state.json
+```
+
+사용자 요청은 `from: "user"`, 답변은 `from: "reviewer"`, `to: "user"` 메시지로 남아야 한다.
+
 ## 진행 중 취소가 반영되지 않음
 
 ### 가능한 원인

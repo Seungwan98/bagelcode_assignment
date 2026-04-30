@@ -2,7 +2,7 @@
 
 ## 목적
 
-AgentBoard MVP에서 중요한 것은 “에이전트 간 메시징”, “사용자 관찰”, “진행 중 취소”, “artifact 생성”이 깨지지 않는 것이다. 테스트는 이 증거를 보호하는 방향으로 작성한다.
+AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, “에이전트 간 메시징”, “사용자 관찰”, “진행 중 취소”, “artifact 생성”이 깨지지 않는 것이다. 테스트는 이 증거를 보호하는 방향으로 작성한다.
 
 ## 테스트 계층
 
@@ -41,6 +41,7 @@ README 흐름이 실제로 되는지 검증한다.
 - mock run 생성
 - 채팅 메시지 업데이트 확인
 - 진행 중 입력 잠금과 취소 확인
+- 완료 뒤 다음 요청 전송과 새 agent 답변 확인
 - final artifact 확인
 
 ## 우선순위
@@ -50,8 +51,8 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 1. Message Bus unit/integration test
 2. JSONL store test
 3. Mock runner integration test
-4. Control stop API와 runner cancellation test
-5. Intervention API compatibility test
+4. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
+5. Control stop API와 runner cancellation test
 6. CLI adapter command parsing / fake CLI integration test
 7. Session persistence store/API test
 8. Chat UI state persistence smoke test
@@ -111,13 +112,13 @@ it('routes planner instruction to engineer inbox', async () => {
 });
 ```
 
-## 예시: Intervention test
+## 예시: 사용자 요청 turn test
 
 ```ts
-it('persists user intervention and delivers it to target agent', async () => {
+it('persists user request and starts a new agent answer turn', async () => {
   const response = await postIntervention(runId, {
-    to: 'engineer',
-    body: 'README 실행성을 우선해줘',
+    to: 'all',
+    body: 'README 실행성을 우선해 답해줘',
   });
 
   expect(response.ok).toBe(true);
@@ -125,9 +126,14 @@ it('persists user intervention and delivers it to target agent', async () => {
   const messages = await readJsonl(`${runDir}/messages.jsonl`);
   expect(messages).toContainEqual(expect.objectContaining({
     from: 'user',
-    to: 'engineer',
+    to: 'all',
     kind: 'user_intervention',
-    body: 'README 실행성을 우선해줘',
+    body: 'README 실행성을 우선해 답해줘',
+  }));
+  expect(messages).toContainEqual(expect.objectContaining({
+    from: 'reviewer',
+    to: 'user',
+    kind: 'result',
   }));
 });
 ```
@@ -142,10 +148,11 @@ it('persists user intervention and delivers it to target agent', async () => {
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
 - [ ] 진행 중 composer가 잠기고 취소 버튼 표시
+- [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
 - [ ] final artifact 표시
 - [ ] 루트 페이지에서 active/recent run resume 가능
-- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer 복원
+- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, draft 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨
 

@@ -95,41 +95,48 @@ async function invokeAgent(input: {
   return body;
 }
 
-function buildPlannerPrompt(state: RunState): string {
+function latestUserRequest(messages: Awaited<ReturnType<typeof readMessages>>, fallback: string): string {
+  return messages.filter((message) => message.kind === 'user_intervention').at(-1)?.body ?? fallback;
+}
+
+function buildPlannerPrompt(state: RunState, userRequest: string): string {
   return [
     '너는 AgentBoard의 Planner Agent다.',
-    '사용자 brief를 분석해서 Engineer Agent에게 전달할 실행 계획을 작성해라.',
-    '출력은 한국어 Markdown으로, MVP 목표와 구현 순서를 짧게 정리해라.',
+    '사용자의 최신 채팅 요청을 분석해서 Engineer Agent에게 전달할 답변 계획을 작성해라.',
+    '출력은 한국어 Markdown으로, 요청 의도와 답변/구현 방향을 짧게 정리해라.',
     '',
     `Run ID: ${state.run.id}`,
-    `Brief: ${state.run.brief}`,
+    `Initial brief: ${state.run.brief}`,
+    `Latest user request: ${userRequest}`,
   ].join('\n');
 }
 
-function buildEngineerPrompt(state: RunState, plan: string): string {
+function buildEngineerPrompt(state: RunState, userRequest: string, plan: string): string {
   return [
     '너는 AgentBoard의 Engineer Agent다.',
-    'Planner의 계획을 받아 구현 접근과 산출물 구조를 작성해라.',
+    'Planner의 계획을 받아 최신 사용자 요청에 대한 구체적인 해결/구현 접근을 작성해라.',
     '출력은 한국어 Markdown으로, 파일/모듈/검증 관점을 포함해라.',
     '',
-    `Brief: ${state.run.brief}`,
+    `Initial brief: ${state.run.brief}`,
+    `Latest user request: ${userRequest}`,
     '',
     'Planner output:',
     plan,
   ].join('\n');
 }
 
-async function buildReviewerPrompt(state: RunState, plan: string, engineeringResult: string): Promise<string> {
+async function buildReviewerPrompt(state: RunState, userRequest: string, plan: string, engineeringResult: string): Promise<string> {
   const interventions = (await readMessages(state.run.id)).filter((message) => message.kind === 'user_intervention');
   const interventionSummary = interventions.length
     ? interventions.map((message, index) => `${index + 1}. to=${message.to}: ${message.body}`).join('\n')
     : '사용자 개입 없음';
   return [
     '너는 AgentBoard의 Reviewer Agent다.',
-    'Planner와 Engineer의 결과, 사용자 개입을 반영해 최종 보고서를 작성해라.',
-    '출력은 한국어 Markdown으로, 협업 증거와 최종 결론을 포함해라.',
+    'Planner와 Engineer의 결과를 검토해 사용자에게 직접 보여줄 최종 답변을 작성해라.',
+    '출력은 한국어 Markdown으로, 최신 요청에 대한 답변과 필요한 검증/주의점을 포함해라.',
     '',
-    `Brief: ${state.run.brief}`,
+    `Initial brief: ${state.run.brief}`,
+    `Latest user request: ${userRequest}`,
     '',
     'Planner output:',
     plan,
@@ -161,13 +168,14 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     });
 
     const state = await readState(runId);
+    const userRequest = latestUserRequest(await readMessages(runId), state.run.brief);
     currentRole = 'planner';
     const plan = await invokeAgent({
       state,
       role: 'planner',
       to: 'engineer',
       kind: 'instruction',
-      prompt: buildPlannerPrompt(state),
+      prompt: buildPlannerPrompt(state, userRequest),
       signal,
     });
 
@@ -177,7 +185,7 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       role: 'engineer',
       to: 'reviewer',
       kind: 'result',
-      prompt: buildEngineerPrompt(state, plan),
+      prompt: buildEngineerPrompt(state, userRequest, plan),
       signal,
     });
 
@@ -187,8 +195,16 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       role: 'reviewer',
       to: 'planner',
       kind: 'review',
-      prompt: await buildReviewerPrompt(state, plan, engineeringResult),
+      prompt: await buildReviewerPrompt(state, userRequest, plan, engineeringResult),
       signal,
+    });
+
+    await sendMessage({
+      runId,
+      from: 'reviewer',
+      to: 'user',
+      kind: 'result',
+      body: reviewerResult,
     });
 
     const finalReport = [
@@ -196,6 +212,7 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       '',
       `- Run ID: ${runId}`,
       '- Mode: cli',
+      `- Latest User Request: ${userRequest}`,
       '',
       '## Planner Output',
       '',
@@ -224,6 +241,8 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       createdAt: nowIso(),
     });
   } catch (error) {
+    const wasStopped = signal.aborted || (await readState(runId).then((state) => state.run.status === 'stopped').catch(() => false));
+    if (wasStopped) return;
     const message = errorText(error);
     if (currentRole) await updateAgentStatus(runId, currentRole, 'failed').catch(() => undefined);
     await appendEvent(runId, {
@@ -237,22 +256,4 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     await writeArtifact(runId, `# AgentBoard CLI Run Failed\n\n${message}\n`, currentRole ?? 'cli-runner').catch(() => undefined);
     await updateRunStatus(runId, 'failed').catch(() => undefined);
   }
-}
-
-export async function acknowledgeCliIntervention(runId: string, to: string, body: string): Promise<void> {
-  const target = to === 'all' ? 'planner' : to;
-  await appendEvent(runId, {
-    id: createId('evt'),
-    runId,
-    type: 'message.sent',
-    actor: target,
-    payload: {
-      internal: true,
-      kind: 'ack',
-      to: target,
-      summary: '사용자 지시를 실행 맥락에 저장했습니다.',
-      interventionPreview: body.slice(0, 160),
-    },
-    createdAt: nowIso(),
-  });
 }

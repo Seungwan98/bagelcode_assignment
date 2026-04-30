@@ -33,6 +33,7 @@ interface ChatRoomUiState {
   selectedLogId?: string | null;
   showArtifact?: boolean;
   showLogs?: boolean;
+  body?: string;
 }
 
 function chatRoomUiStateKey(runId: string): string {
@@ -49,6 +50,7 @@ function readChatRoomUiState(runId: string): ChatRoomUiState {
       selectedLogId: typeof parsed.selectedLogId === 'string' || parsed.selectedLogId === null ? parsed.selectedLogId : undefined,
       showArtifact: typeof parsed.showArtifact === 'boolean' ? parsed.showArtifact : undefined,
       showLogs: typeof parsed.showLogs === 'boolean' ? parsed.showLogs : undefined,
+      body: typeof parsed.body === 'string' ? parsed.body : undefined,
     };
   } catch {
     return {};
@@ -275,6 +277,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
+  const [body, setBody] = useState('');
   const [controlStatus, setControlStatus] = useState('');
   const transcriptRef = useRef<HTMLDivElement>(null);
   const restoredUiStateRef = useRef(false);
@@ -335,6 +338,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     if (saved.selectedLogId !== undefined) setSelectedLogId(saved.selectedLogId);
     if (saved.showArtifact !== undefined) setShowArtifact(saved.showArtifact);
     if (saved.showLogs !== undefined) setShowLogs(saved.showLogs);
+    if (saved.body !== undefined) setBody(saved.body);
     restoredUiStateRef.current = true;
   }, [initialState.agents, runId]);
 
@@ -345,8 +349,9 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
       selectedLogId,
       showArtifact,
       showLogs,
+      body,
     });
-  }, [runId, selectedAgentId, selectedLogId, showArtifact, showLogs]);
+  }, [body, runId, selectedAgentId, selectedLogId, showArtifact, showLogs]);
 
   useEffect(() => {
     const clientSessionId = readClientSessionId();
@@ -405,6 +410,24 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [selectedLogId]);
+
+  async function sendChatMessage() {
+    if (!body.trim() || runInProgress) return;
+    setControlStatus('Agents에게 요청을 전달하는 중...');
+    const response = await fetch(`/api/runs/${runId}/interventions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: 'all', body, priority: 'normal' }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      setControlStatus(data?.error?.message ?? '요청 전송 실패');
+      return;
+    }
+    setBody('');
+    setControlStatus('Agents가 답변을 생성하고 있습니다.');
+    await refreshSnapshot();
+  }
 
   async function stopRun() {
     if (!runInProgress) return;
@@ -652,25 +675,30 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           ) : null}
           <div className="composer-target-row">
             <span className={`run-progress-indicator ${runInProgress ? 'active' : ''}`}>
-              {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : '이벤트 수신 대기 중'}
+              {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : 'Agents에게 다음 요청을 보낼 수 있습니다.'}
             </span>
-            {!runInProgress ? <span>새 요청은 첫 화면에서 다시 시작합니다.</span> : null}
+            <span>{runInProgress ? '답변 생성 중에는 전송이 잠깁니다.' : 'Enter는 줄바꿈, ⌘/Ctrl + Enter는 전송'}</span>
           </div>
-          {runInProgress ? (
-            <div className="chat-input-row active-run-controls">
-              <textarea
-                aria-label="작업 진행 상태"
-                disabled
-                value={`${progressLabel}입니다. 진행 중에는 추가 전송 대신 Logs와 에이전트 상태를 확인하거나 작업을 취소할 수 있습니다.`}
-              />
+          <div className="chat-input-row active-run-controls">
+            <textarea
+              aria-label="Agents에게 보낼 메시지"
+              disabled={runInProgress}
+              onChange={(event) => setBody(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault();
+                  void sendChatMessage();
+                }
+              }}
+              placeholder={runInProgress ? `${progressLabel}입니다. Logs와 에이전트 상태를 확인하거나 취소할 수 있습니다.` : 'Agents에게 요청하세요. 예: 지금 구조를 더 ChatGPT처럼 만들어줘.'}
+              value={runInProgress ? '' : body}
+            />
+            {runInProgress ? (
               <button className="danger" onClick={() => void stopRun()} type="button">취소</button>
-            </div>
-          ) : (
-            <div className="terminal-run-actions">
-              <p>이 run은 {runState.run.status} 상태입니다. 새 작업은 첫 화면에서 새 메시지로 시작하세요.</p>
-              <Link className="button-link" href="/">새 요청 시작</Link>
-            </div>
-          )}
+            ) : (
+              <button disabled={!body.trim()} onClick={() => void sendChatMessage()} type="button">전송</button>
+            )}
+          </div>
           {controlStatus ? <p className="composer-status">{controlStatus}</p> : null}
         </footer>
       </section>

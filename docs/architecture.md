@@ -2,13 +2,13 @@
 
 ## 목적
 
-AgentBoard는 첫 메시지로 여러 AI 에이전트 작업을 시작하고, 사용자가 채팅형 UI에서 협업 과정을 관찰하며 진행 중 취소로 흐름을 제어할 수 있게 만드는 로컬 실행형 MVP다.
+AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이전트가 협업해 답변하고, 사용자가 채팅형 UI에서 그 과정을 관찰할 수 있게 만드는 로컬 실행형 MVP다.
 
 핵심 증명은 다음 세 가지다.
 
 1. 두 개 이상의 에이전트가 구조화된 메시지를 주고받는다.
 2. 사용자는 Chat UI에서 에이전트 상태, 메시지, 산출물을 실시간으로 관찰한다.
-3. 사용자는 실행 중 추가 전송 없이 진행 상태를 확인하고 필요하면 run을 취소할 수 있다.
+3. 사용자는 답변 생성 중에는 진행 상태를 확인하거나 취소하고, 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.
 
 ## 전체 흐름
 
@@ -21,7 +21,7 @@ AgentBoard는 첫 메시지로 여러 AI 에이전트 작업을 시작하고, �
       ├─ Agent detail panel로 현재 상태 확인
       ├─ 사용자-facing 메시지 버블 관찰
       ├─ Logs drawer로 agent handoff 관찰
-      ├─ 진행 중 composer 잠금과 취소 버튼
+      ├─ 답변 생성 중 composer 잠금과 취소 버튼
       └─ 보고서 drawer 확인
 
 Next.js App
@@ -59,13 +59,13 @@ Local State Store
 주요 구성:
 
 - `RunCreateForm`: 첫 요청 composer, 실행 모드 선택, 브라우저 session 생성/조회, 최근 run resume 카드
-- `ChatRoom`: run header, 진행 indicator, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, 취소 컨트롤을 한 화면에서 제공
-- `ChatRoom`의 selected agent/log/report 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
+- `ChatRoom`: run header, 진행 indicator, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공
+- `ChatRoom`의 selected agent/log/report/draft 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
 
 브라우저 session state는 두 계층으로 나뉜다.
 
 - 서버 local file store: `clientSessionId`와 active/recent run association
-- 브라우저 `localStorage`: run별 선택 agent, Logs/보고서 drawer 같은 UI 편의 상태
+- 브라우저 `localStorage`: run별 선택 agent, Logs/보고서 drawer, draft 같은 UI 편의 상태
 
 ### Next.js API Layer
 
@@ -77,7 +77,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - Session snapshot 조회 및 stale run 정리
 - Run 상태 조회
 - SSE event stream 제공
-- 호환용 사용자 개입 메시지 기록
+- 사용자 요청 메시지 기록 및 새 답변 turn 시작
 - pause/resume/stop 같은 제어 명령 전달. UI 취소는 `stop` 사용
 
 ### Runner Process
@@ -102,7 +102,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - 메시지는 append-only로 저장한다.
 - `messages.jsonl`이 메시지 이력의 기준이다.
 - 각 recipient inbox는 라우팅과 디버깅을 위한 파생 로그다.
-- 호환용 사용자 개입 API는 `from: "user"`인 메시지로 저장하지만, 기본 UI는 진행 중 추가 전송을 막는다.
+- 사용자 요청은 `from: "user"`, `kind: "user_intervention"` 메시지로 저장하고, 답변 생성 중에는 중복 전송을 막는다.
 
 ### Agent Adapters
 
@@ -169,17 +169,17 @@ Planner -> Message Bus -> Engineer -> Message Bus -> Reviewer -> Artifact
 4. Reviewer가 결과를 검토한다.
 5. Runner가 `artifacts/final-report.md`를 갱신한다.
 
-### 3. 진행 중 사용자 제어
+### 3. 사용자 요청 turn
 
 ```text
-Browser -> POST /api/runs/<runId>/control { action: "stop" } -> Runner stop -> control.stopped event -> ChatRoom refresh
+Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner 시작 -> Reviewer 답변 -> ChatRoom refresh
 ```
 
-1. ChatRoom은 `created`, `running`, `paused` 상태를 진행 중으로 본다.
-2. 진행 중에는 하단 입력창을 disabled 처리하고 현재 작업 indicator를 보여준다.
-3. 사용자가 `취소`를 누르면 control API가 mock/CLI runner를 정지하고 run status를 `stopped`로 바꾼다.
-4. 완료·실패·중단 뒤 새 요청은 루트의 첫 메시지 composer에서 새 run으로 시작한다.
-5. `POST /api/runs/:runId/interventions`는 기존 테스트와 API 호환을 위해 남기지만 기본 UI 경로에서는 노출하지 않는다.
+1. 사용자가 ChatRoom composer에서 다음 요청을 보낸다.
+2. API가 `user_intervention` 메시지를 저장하고 run status를 `running`으로 바꾼다.
+3. Runner가 Planner → Engineer → Reviewer handoff를 남긴 뒤 Reviewer → User 답변 메시지를 생성한다.
+4. 답변 생성 중에는 composer를 disabled 처리하고 현재 작업 indicator와 `취소` 버튼을 보여준다.
+5. 사용자가 `취소`를 누르면 control API가 runner를 정지하고 run status를 `stopped`로 바꾼다. 완료 또는 중단 뒤에는 같은 composer에서 다음 요청을 다시 보낼 수 있다.
 
 ## Event log 기준
 
@@ -210,7 +210,7 @@ Browser -> POST /api/runs/<runId>/control { action: "stop" } -> Runner stop -> c
 - `POST /api/sessions/:clientSessionId/active-run`
 - `GET /api/runs/:runId`
 - `GET /api/runs/:runId/events`
-- `POST /api/runs/:runId/interventions` — 호환용
+- `POST /api/runs/:runId/interventions` — 새 사용자 요청 turn 시작
 - `POST /api/runs/:runId/control` — UI 취소는 `stop` 사용
 
 ## ASAP 구현 순서
@@ -223,7 +223,7 @@ Browser -> POST /api/runs/<runId>/control { action: "stop" } -> Runner stop -> c
 4. Mock runner와 Message Bus
 5. SSE 기반 ChatRoom transcript와 Logs drawer
 6. Agent 상태 rail
-7. 진행 indicator와 취소 컨트롤
+7. 사용자 요청 composer, 진행 indicator, 취소 컨트롤
 8. 보고서 drawer
 9. Browser session resume와 ChatRoom UI state persistence
 10. README 실행 흐름

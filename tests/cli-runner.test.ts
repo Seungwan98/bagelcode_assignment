@@ -75,5 +75,6 @@ test('CLI runner invokes configured adapters and creates final artifact', async 
   assert.ok(messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
   assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'reviewer'));
   assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'planner'));
+  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'user' && /CLI 테스트 지시를 반영해줘/.test(message.body)));
   assert.match(artifact, /CLI 테스트 지시를 반영해줘/);
 }));

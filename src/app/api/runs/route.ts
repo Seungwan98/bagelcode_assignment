@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { AgentRole, CreateRunInput } from '@/lib/protocol/types';
 import { createRun, normalizeClientSessionId } from '@/lib/store/file-store';
+import { sendMessage } from '@/lib/bus/message-bus';
 import { startMockRun } from '@/lib/runner/mock-runner';
 import { startCliRun, validateCliRunnerConfig } from '@/lib/runner/cli-runner';
 
@@ -34,6 +35,13 @@ export async function POST(request: Request) {
     mode: requestedMode,
     agents: agents.length ? agents : ALLOWED_AGENTS,
     clientSessionId,
+  });
+  await sendMessage({
+    runId: state.run.id,
+    from: 'user',
+    to: 'all',
+    kind: 'user_intervention',
+    body: state.run.brief,
   });
   if (state.run.mode === 'mock') startMockRun(state.run.id);
   if (state.run.mode === 'cli') startCliRun(state.run.id);

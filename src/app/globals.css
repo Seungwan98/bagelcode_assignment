@@ -610,8 +610,6 @@ pre {
   .chat-transcript { padding: 18px 14px; }
   .chat-bubble { max-width: 94%; }
   .chat-input-row { grid-template-columns: 1fr; }
-  .terminal-run-actions { display: grid; }
-  .button-link { text-align: center; }
   .composer-target-row { align-items: stretch; flex-direction: column; }
   .composer-target-row select { max-width: none; }
 }

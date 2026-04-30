@@ -130,7 +130,7 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
       <div className="start-chat-header">
         <span className="kicker">Start with chat</span>
         <h2>무엇을 만들지 바로 입력하세요</h2>
-        <p>첫 메시지를 보내면 Planner, Engineer, Reviewer가 순서대로 작업하고 진행 상황은 채팅방에서 관찰합니다.</p>
+        <p>첫 메시지를 보내면 Planner, Engineer, Reviewer가 답변을 만들고 진행 상황은 채팅방에서 관찰합니다.</p>
       </div>
 
       {isSessionLoading ? <p className="hint">최근 대화 기록을 확인하는 중입니다...</p> : null}
@@ -151,7 +151,7 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
       <section className="starter-chat-window" aria-label="첫 요청 입력">
         <div className="chat-bubble system starter-bubble">
           <span className="bubble-meta">AgentBoard · ready</span>
-          <p>요청을 보내면 에이전트 팀이 작업을 시작합니다. 진행 중에는 추가 전송 대신 상태 확인과 취소만 가능합니다.</p>
+          <p>요청을 보내면 에이전트 팀이 답변을 생성합니다. 생성 중에는 전송이 잠기고, 완료 뒤 같은 채팅방에서 다음 요청을 이어갈 수 있습니다.</p>
         </div>
         <label className="chat-start-composer">
           <span className="sr-only">첫 요청</span>
@@ -191,7 +191,7 @@ export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
       <div className="start-actions">
         <span>⌘/Ctrl + Enter로 시작</span>
         <button disabled={isSubmitting || !brief.trim()} type="submit">
-          {isSubmitting ? '작업 시작 중...' : '에이전트 작업 시작'}
+          {isSubmitting ? '답변 준비 중...' : 'Agents에게 전송'}
         </button>
       </div>
     </form>
