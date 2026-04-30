@@ -81,7 +81,7 @@ CLI mode 예시:
 
 ```bash
 AGENTBOARD_MODE=cli \
-AGENTBOARD_CODEX_CMD="codex" \
+AGENTBOARD_CODEX_CMD="codex exec" \
 npm run dev
 ```
 

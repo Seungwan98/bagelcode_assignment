@@ -60,7 +60,7 @@ export function RunCreateForm() {
         />
       </label>
 
-      {mode === 'cli' ? <p className="hint">CLI mode는 서버 환경변수에 AGENTBOARD_CODEX_CMD가 설정되어 있어야 하며 세 역할 모두 Codex로 실행됩니다.</p> : null}
+      {mode === 'cli' ? <p className="hint">CLI mode는 AGENTBOARD_CODEX_CMD=&quot;codex exec&quot; 설정이 필요하며 세 역할 모두 Codex로 실행됩니다.</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
 
       <div className="start-actions">

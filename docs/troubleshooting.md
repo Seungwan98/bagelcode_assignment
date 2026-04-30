@@ -125,6 +125,13 @@ echo $AGENTBOARD_CODEX_CMD
 echo $AGENTBOARD_CLI_PROMPT_MODE
 ```
 
+`codex adapter exited with code 1`이 바로 발생하면 interactive `codex`가 실행된 경우일 수 있다. AgentBoard는 non-interactive 실행이 필요하므로 command를 다음처럼 둔다.
+
+```bash
+AGENTBOARD_CODEX_CMD="codex exec"
+AGENTBOARD_CLI_PROMPT_MODE=stdin
+```
+
 `CLI_CONFIG_INVALID`가 나오면 command allowlist와 role adapter 설정을 확인한다.
 
 ```bash
