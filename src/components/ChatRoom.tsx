@@ -49,12 +49,27 @@ function messageHint(message: AgentMessage, agentMap: Map<string, AgentState>): 
   return `${from} → ${to} · ${message.kind}`;
 }
 
+function formatTime(value?: string): string {
+  if (!value) return '-';
+  return new Date(value).toLocaleTimeString();
+}
+
+function agentSituation(agent: AgentState): string {
+  if (agent.status === 'thinking') return '현재 응답을 생성하거나 CLI 작업을 수행하는 중입니다.';
+  if (agent.status === 'waiting') return '다른 에이전트나 사용자 입력을 기다리는 중입니다.';
+  if (agent.status === 'blocked') return '진행을 막는 조건이 있어 후속 지시가 필요합니다.';
+  if (agent.status === 'done') return '맡은 역할의 작업을 완료했습니다.';
+  if (agent.status === 'failed') return '실행 중 오류가 발생했습니다. 최근 이벤트와 메시지를 확인하세요.';
+  return '아직 작업을 시작하지 않았거나 다음 차례를 기다리는 중입니다.';
+}
+
 export function ChatRoom({ initialState, runId }: { initialState: RunState; runId: string }) {
   const [runState, setRunState] = useState(initialState);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [artifact, setArtifact] = useState('');
   const [showArtifact, setShowArtifact] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
   const [to, setTo] = useState('engineer');
   const [body, setBody] = useState('');
@@ -62,7 +77,34 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const agentMap = useMemo(() => new Map(runState.agents.map((agent) => [agent.id, agent])), [runState.agents]);
+  const selectedAgent = agentMap.get(selectedAgentId) ?? runState.agents[0];
   const latestEvent = events.at(-1);
+  const selectedAgentMessages = useMemo(
+    () => messages
+      .filter((message) => message.from === selectedAgentId || message.to === selectedAgentId)
+      .slice(-4)
+      .reverse(),
+    [messages, selectedAgentId],
+  );
+  const selectedAgentEvents = useMemo(
+    () => events
+      .filter((event) => {
+        if (event.actor === selectedAgentId) return true;
+        const message = messageFromEvent(event);
+        return message?.from === selectedAgentId || message?.to === selectedAgentId;
+      })
+      .slice(-3)
+      .reverse(),
+    [events, selectedAgentId],
+  );
+  const selectedSentCount = useMemo(
+    () => messages.filter((message) => message.from === selectedAgentId).length,
+    [messages, selectedAgentId],
+  );
+  const selectedReceivedCount = useMemo(
+    () => messages.filter((message) => message.to === selectedAgentId).length,
+    [messages, selectedAgentId],
+  );
 
   async function refreshSnapshot() {
     const response = await fetch(`/api/runs/${runId}`, { cache: 'no-store' });
@@ -96,6 +138,12 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, runState.run.status]);
+
+  useEffect(() => {
+    if (!runState.agents.some((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId(runState.agents[0]?.id ?? 'planner');
+    }
+  }, [runState.agents, selectedAgentId]);
 
   async function sendIntervention() {
     if (!body.trim()) return;
@@ -138,12 +186,78 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
 
         <div className="agent-rail" aria-label="에이전트 상태">
           {runState.agents.map((agent) => (
-            <div className="agent-pill" key={agent.id}>
+            <button
+              aria-pressed={selectedAgentId === agent.id}
+              className={`agent-pill ${selectedAgentId === agent.id ? 'selected' : ''}`}
+              key={agent.id}
+              onClick={() => setSelectedAgentId(agent.id)}
+              type="button"
+            >
               <strong>{agent.displayName}</strong>
               <span>{agent.adapter} · {agent.status}</span>
-            </div>
+            </button>
           ))}
         </div>
+
+        {selectedAgent ? (
+          <section className={`agent-detail-panel ${selectedAgent.status}`} aria-live="polite">
+            <div className="agent-detail-summary">
+              <span className="kicker">Selected Agent</span>
+              <h2>{selectedAgent.displayName}</h2>
+              <p>{agentSituation(selectedAgent)}</p>
+            </div>
+            <dl className="agent-detail-stats">
+              <div>
+                <dt>Status</dt>
+                <dd>{selectedAgent.status}</dd>
+              </div>
+              <div>
+                <dt>Adapter</dt>
+                <dd>{selectedAgent.adapter}</dd>
+              </div>
+              <div>
+                <dt>Sent</dt>
+                <dd>{selectedSentCount}</dd>
+              </div>
+              <div>
+                <dt>Received</dt>
+                <dd>{selectedReceivedCount}</dd>
+              </div>
+              <div>
+                <dt>Last message</dt>
+                <dd>{formatTime(selectedAgent.lastMessageAt)}</dd>
+              </div>
+            </dl>
+            <div className="agent-detail-feed">
+              <div>
+                <strong>최근 메시지</strong>
+                {selectedAgentMessages.length ? (
+                  <ul>
+                    {selectedAgentMessages.map((message) => (
+                      <li key={message.id}>
+                        <span>{messageHint(message, agentMap)} · {formatTime(message.createdAt)}</span>
+                        <p>{message.body}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p>아직 이 에이전트의 메시지가 없습니다.</p>}
+              </div>
+              <div>
+                <strong>최근 이벤트</strong>
+                {selectedAgentEvents.length ? (
+                  <ul>
+                    {selectedAgentEvents.map((event) => (
+                      <li key={event.id}>
+                        <span>{event.type} · {formatTime(event.createdAt)}</span>
+                        <p>{event.actor}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p>아직 이 에이전트의 이벤트가 없습니다.</p>}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <div className="chat-transcript" ref={transcriptRef}>
           <div className="chat-bubble system">

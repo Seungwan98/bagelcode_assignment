@@ -17,6 +17,7 @@ AgentBoard는 여러 AI 에이전트가 하나의 작업을 분담하고, 사용
   └─ Browser Chat UI
       ├─ 대화 생성
       ├─ Agent 상태 rail 관찰
+      ├─ Agent detail panel로 현재 상태 확인
       ├─ 메시지 버블 관찰
       ├─ 하단 composer로 User Intervention 전송
       └─ 보고서 drawer 확인
@@ -54,7 +55,7 @@ Local State Store
 주요 구성:
 
 - `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택
-- `ChatRoom`: run header, agent rail, 메시지 transcript, 보고서 drawer, intervention composer를 한 화면에서 제공
+- `ChatRoom`: run header, agent rail, 선택 agent detail panel, 메시지 transcript, 보고서 drawer, intervention composer를 한 화면에서 제공
 
 ### Next.js API Layer
 
