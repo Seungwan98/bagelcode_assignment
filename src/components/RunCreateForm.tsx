@@ -3,11 +3,22 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export function RunCreateForm() {
+type SelectableRunMode = 'mock' | 'cli';
+
+interface RunCreateFormProps {
+  initialMode?: SelectableRunMode;
+}
+
+const MODE_OPTIONS: Array<{ value: SelectableRunMode; label: string; description: string }> = [
+  { value: 'mock', label: 'Mock', description: '외부 CLI 없이 즉시 실행' },
+  { value: 'cli', label: 'CLI', description: 'Codex CLI로 실제 실행' },
+];
+
+export function RunCreateForm({ initialMode = 'mock' }: RunCreateFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState('BagelCode multi-agent assignment');
   const [brief, setBrief] = useState('여러 AI 에이전트가 협업하는 Chat MVP 계획과 구현 결과를 만들어줘.');
-  const [mode, setMode] = useState<'mock' | 'cli'>('mock');
+  const [mode, setMode] = useState<SelectableRunMode>(initialMode);
   const [isSubmitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -43,10 +54,23 @@ export function RunCreateForm() {
         <input value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
 
-      <div className="mode-switch" role="group" aria-label="실행 모드 선택">
-        <button className={mode === 'mock' ? 'selected secondary' : 'secondary'} type="button" onClick={() => setMode('mock')}>Mock</button>
-        <button className={mode === 'cli' ? 'selected secondary' : 'secondary'} type="button" onClick={() => setMode('cli')}>CLI</button>
-      </div>
+      <fieldset className="mode-switch" aria-label="실행 모드 선택">
+        <legend className="sr-only">실행 모드 선택</legend>
+        {MODE_OPTIONS.map((option) => (
+          <label className={mode === option.value ? 'selected' : ''} key={option.value} htmlFor={`run-mode-${option.value}`}>
+            <input
+              checked={mode === option.value}
+              id={`run-mode-${option.value}`}
+              name="run-mode"
+              onChange={() => setMode(option.value)}
+              type="radio"
+              value={option.value}
+            />
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </label>
+        ))}
+      </fieldset>
 
       <label className="chat-start-composer">
         <span className="sr-only">과제 brief</span>

@@ -1,6 +1,8 @@
 import { RunCreateForm } from '@/components/RunCreateForm';
 
 export default function HomePage() {
+  const initialMode = process.env.AGENTBOARD_MODE === 'cli' ? 'cli' : 'mock';
+
   return (
     <main className="landing-shell">
       <section className="landing-hero">
@@ -11,7 +13,7 @@ export default function HomePage() {
           사용자는 채팅 입력창에서 바로 개입할 수 있습니다.
         </p>
       </section>
-      <RunCreateForm />
+      <RunCreateForm initialMode={initialMode} />
       <section className="proof-strip" aria-label="핵심 기능">
         <div><strong>3 Agents</strong><span>Planner · Engineer · Reviewer</span></div>
         <div><strong>Live Chat</strong><span>SSE 기반 실시간 메시지</span></div>
