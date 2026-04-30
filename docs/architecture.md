@@ -56,7 +56,7 @@ Local State Store
 주요 구성:
 
 - `RunCreateForm`: 채팅 시작 composer, 제목, 실행 모드 선택
-- `ChatRoom`: run header, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer, 보고서 drawer, intervention composer를 한 화면에서 제공
+- `ChatRoom`: run header, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, intervention composer를 한 화면에서 제공
 
 ### Next.js API Layer
 

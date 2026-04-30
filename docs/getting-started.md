@@ -46,7 +46,7 @@ http://localhost:3000
 3. 실행 모드는 `mock`을 선택한다.
 4. `대화 시작` 버튼을 누른다.
 5. `/runs/<runId>` 채팅방으로 이동한다.
-6. 상단 우측 `Logs` 버튼에서 다음 흐름을 확인한다.
+6. 상단 우측 `Logs` 버튼에서 다음 흐름을 확인하고, 로그 항목을 눌러 전체 payload를 팝업으로 확인한다.
    - `run.started`
    - `planner -> engineer` 메시지
    - `engineer -> planner` progress/result 메시지

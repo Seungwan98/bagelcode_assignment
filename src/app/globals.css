@@ -211,20 +211,32 @@ pre {
   list-style: none;
 }
 .process-log-item {
-  display: grid;
-  gap: 4px;
-  padding: 11px 12px;
+  padding: 0;
   border: 1px solid var(--line);
   border-left: 4px solid rgba(148, 163, 184, .42);
   border-radius: 16px;
   background: rgba(255,255,255,.045);
+  overflow: hidden;
 }
 .process-log-item.route { border-left-color: var(--accent); background: rgba(125, 211, 252, .08); }
 .process-log-item.error { border-left-color: var(--danger); background: rgba(127, 29, 29, .28); }
-.process-log-item span { color: var(--muted); font-size: .72rem; font-weight: 800; }
-.process-log-item strong { font-size: .9rem; }
-.process-log-item em { color: var(--accent-2); font-size: .75rem; font-style: normal; }
-.process-log-item p {
+.process-log-trigger {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 11px 12px;
+  text-align: left;
+}
+.process-log-trigger:hover { background: rgba(255,255,255,.055); }
+.process-log-trigger span { color: var(--muted); font-size: .72rem; font-weight: 800; }
+.process-log-trigger strong { font-size: .9rem; }
+.process-log-trigger em { color: var(--accent-2); font-size: .75rem; font-style: normal; }
+.process-log-trigger p {
   display: -webkit-box;
   margin: 2px 0 0;
   overflow: hidden;
@@ -234,7 +246,87 @@ pre {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+.process-log-trigger small {
+  justify-self: start;
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: .72rem;
+  font-weight: 900;
+}
 .empty-log { margin: 0; }
+.log-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, .58);
+  backdrop-filter: blur(8px);
+}
+.log-modal {
+  width: min(760px, 100%);
+  max-height: min(78vh, 720px);
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  border: 1px solid rgba(125, 211, 252, .32);
+  border-top: 4px solid rgba(148, 163, 184, .6);
+  border-radius: 28px;
+  background: rgba(10, 15, 27, .98);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, .58);
+  padding: 18px;
+}
+.log-modal.route { border-top-color: var(--accent); }
+.log-modal.error { border-top-color: var(--danger); }
+.log-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.log-modal-header h2 { margin: 4px 0 6px; font-size: clamp(1.15rem, 3vw, 1.65rem); line-height: 1.15; }
+.log-modal-header p { margin: 0; font-size: .9rem; }
+.log-modal-header button { padding: .52rem .82rem; font-size: .84rem; }
+.log-modal-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.log-modal-meta div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.045);
+}
+.log-modal-meta dt {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.log-modal-meta dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: .88rem;
+  font-weight: 800;
+}
+.log-modal-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.log-modal-section h3 { margin: 0; font-size: .92rem; }
+.log-modal-section pre {
+  max-height: 260px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(4, 12, 24, .86);
+}
 .agent-rail { display: flex; gap: 10px; overflow-x: auto; padding: 12px 24px; border-bottom: 1px solid var(--line); background: rgba(7,11,22,.35); }
 .agent-pill {
   min-width: 190px;
@@ -419,6 +511,10 @@ pre {
   .chat-topbar { display: grid; padding: 18px 16px 12px; }
   .chat-topbar-actions { justify-content: flex-start; min-width: 0; }
   .logs-drawer { top: 118px; right: 10px; bottom: 150px; width: calc(100% - 20px); }
+  .log-modal-backdrop { padding: 10px; }
+  .log-modal { max-height: 88vh; border-radius: 22px; }
+  .log-modal-header { display: grid; }
+  .log-modal-meta { grid-template-columns: 1fr; }
   .agent-rail { padding: 10px 16px; }
   .agent-detail-panel { grid-template-columns: 1fr; padding: 12px 16px; }
   .agent-detail-feed { grid-template-columns: 1fr; }

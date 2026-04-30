@@ -15,9 +15,12 @@ interface RunSnapshot {
 interface ProcessLogEntry {
   id: string;
   createdAt: string;
+  eventType: RunEvent['type'];
+  actor: string;
   title: string;
   detail: string;
   body?: string;
+  payload: string;
   route: boolean;
   tone: 'normal' | 'route' | 'error';
 }
@@ -87,14 +90,31 @@ function eventPayloadText(event: RunEvent, key: string): string | undefined {
   return undefined;
 }
 
+function stringifyPayload(payload: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
+function logBase(event: RunEvent): Pick<ProcessLogEntry, 'id' | 'createdAt' | 'eventType' | 'actor' | 'payload'> {
+  return {
+    id: event.id,
+    createdAt: event.createdAt,
+    eventType: event.type,
+    actor: event.actor,
+    payload: stringifyPayload(event.payload),
+  };
+}
+
 function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>): ProcessLogEntry {
   const message = messageFromEvent(event);
   if (message) {
     const route = isAgentToAgentMessage(message, agentMap);
     const ack = isOperationalAck(message, agentMap);
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: ack ? `${actorLabel(agentMap, message.from)} 지시 수신 처리` : messageHint(message, agentMap),
       detail: ack ? '내부 확인' : event.type,
       body: ack ? undefined : message.body,
@@ -116,8 +136,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
 
   if (event.type === 'agent.started') {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: `${actorLabel(agentMap, event.actor)} started`,
       detail: adapter ? `${role ?? event.actor} · ${adapter}` : role ?? event.actor,
       route: false,
@@ -126,8 +145,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
   if (event.type === 'agent.status_changed') {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: `${actorLabel(agentMap, agentId ?? event.actor)} status`,
       detail: status ?? event.type,
       route: false,
@@ -136,8 +154,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
   if (event.type === 'message.delivered') {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: `message delivered${to ? ` → ${actorLabel(agentMap, to)}` : ''}`,
       detail: messageId ?? event.type,
       route: false,
@@ -146,8 +163,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
   if (event.type === 'message.sent' && event.payload.internal === true) {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: `${actorLabel(agentMap, event.actor)} 지시 수신 처리`,
       detail: summary ?? '내부 이벤트',
       body: interventionPreview,
@@ -157,8 +173,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
   if (event.type === 'error') {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: `${actorLabel(agentMap, event.actor)} error`,
       detail: errorMessage ?? event.type,
       route: false,
@@ -167,8 +182,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
   if (event.type === 'artifact.updated') {
     return {
-      id: event.id,
-      createdAt: event.createdAt,
+      ...logBase(event),
       title: 'artifact updated',
       detail: artifact ?? 'final-report.md',
       route: false,
@@ -177,8 +191,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   }
 
   return {
-    id: event.id,
-    createdAt: event.createdAt,
+    ...logBase(event),
     title: event.type,
     detail: event.actor,
     route: false,
@@ -202,6 +215,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [artifact, setArtifact] = useState('');
   const [showArtifact, setShowArtifact] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
   const [to, setTo] = useState('engineer');
@@ -250,6 +264,10 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     () => events.map((event) => processLogFromEvent(event, agentMap)).reverse(),
     [events, agentMap],
   );
+  const selectedLog = useMemo(
+    () => processLogs.find((log) => log.id === selectedLogId) ?? null,
+    [processLogs, selectedLogId],
+  );
 
   async function refreshSnapshot() {
     const response = await fetch(`/api/runs/${runId}`, { cache: 'no-store' });
@@ -289,6 +307,15 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
       setSelectedAgentId(runState.agents[0]?.id ?? 'planner');
     }
   }, [runState.agents, selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedLogId) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedLogId(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedLogId]);
 
   async function sendIntervention() {
     if (!body.trim()) return;
@@ -346,10 +373,17 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
               <ol className="process-log-list">
                 {processLogs.map((log) => (
                   <li className={`process-log-item ${log.tone}`} key={log.id}>
-                    <span>{formatTime(log.createdAt)}</span>
-                    <strong>{log.title}</strong>
-                    <em>{log.detail}</em>
-                    {log.body ? <p>{log.body}</p> : null}
+                    <button
+                      className="process-log-trigger"
+                      onClick={() => setSelectedLogId(log.id)}
+                      type="button"
+                    >
+                      <span>{formatTime(log.createdAt)}</span>
+                      <strong>{log.title}</strong>
+                      <em>{log.detail}</em>
+                      {log.body ? <p>{log.body}</p> : null}
+                      <small>전체 보기</small>
+                    </button>
                   </li>
                 ))}
               </ol>
@@ -357,6 +391,58 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
               <p className="empty-log">아직 기록된 로그가 없습니다.</p>
             )}
           </aside>
+        ) : null}
+
+        {selectedLog ? (
+          <div className="log-modal-backdrop" onClick={() => setSelectedLogId(null)} role="presentation">
+            <section
+              aria-labelledby="log-modal-title"
+              aria-modal="true"
+              className={`log-modal ${selectedLog.tone}`}
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+            >
+              <header className="log-modal-header">
+                <div>
+                  <span className="kicker">Log Detail</span>
+                  <h2 id="log-modal-title">{selectedLog.title}</h2>
+                  <p>{formatTime(selectedLog.createdAt)} · {selectedLog.eventType}</p>
+                </div>
+                <button className="secondary" onClick={() => setSelectedLogId(null)} type="button">닫기</button>
+              </header>
+
+              <dl className="log-modal-meta">
+                <div>
+                  <dt>Actor</dt>
+                  <dd>{actorLabel(agentMap, selectedLog.actor)}</dd>
+                </div>
+                <div>
+                  <dt>Detail</dt>
+                  <dd>{selectedLog.detail}</dd>
+                </div>
+                <div>
+                  <dt>Route</dt>
+                  <dd>{selectedLog.route ? 'agent → agent' : 'system/user-facing'}</dd>
+                </div>
+                <div>
+                  <dt>Log ID</dt>
+                  <dd>{selectedLog.id}</dd>
+                </div>
+              </dl>
+
+              {selectedLog.body ? (
+                <section className="log-modal-section">
+                  <h3>Message body</h3>
+                  <pre>{selectedLog.body}</pre>
+                </section>
+              ) : null}
+
+              <section className="log-modal-section">
+                <h3>Raw payload</h3>
+                <pre>{selectedLog.payload || '{}'}</pre>
+              </section>
+            </section>
+          </div>
         ) : null}
 
         <div className="agent-rail" aria-label="에이전트 상태">
