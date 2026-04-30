@@ -204,7 +204,9 @@ pre {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px;
+  min-height: 0;
   padding: 16px;
+  overflow: hidden;
   border: 1px solid rgba(125, 211, 252, .28);
   border-radius: 24px;
   background: rgba(7, 11, 22, .96);
@@ -224,12 +226,19 @@ pre {
   display: grid;
   align-content: start;
   gap: 10px;
+  min-height: 0;
+  max-height: 100%;
   margin: 0;
-  padding: 0;
-  overflow: auto;
+  padding: 0 4px 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   list-style: none;
 }
 .process-log-item {
+  min-width: 0;
+  min-height: 88px;
   padding: 0;
   border: 1px solid var(--line);
   border-left: 4px solid rgba(148, 163, 184, .42);
@@ -241,6 +250,8 @@ pre {
 .process-log-item.error { border-left-color: var(--danger); background: rgba(127, 29, 29, .28); }
 .process-log-trigger {
   width: 100%;
+  min-width: 0;
+  min-height: 88px;
   display: grid;
   gap: 4px;
   border: 0;
@@ -253,7 +264,7 @@ pre {
 }
 .process-log-trigger:hover { background: rgba(255,255,255,.055); }
 .process-log-trigger span { color: var(--muted); font-size: .72rem; font-weight: 800; }
-.process-log-trigger strong { font-size: .9rem; }
+.process-log-trigger strong { min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
 .process-log-trigger em { color: var(--accent-2); font-size: .75rem; font-style: normal; }
 .process-log-trigger p {
   display: -webkit-box;
