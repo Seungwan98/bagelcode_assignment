@@ -177,6 +177,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   const artifact = eventPayloadText(event, 'artifact');
   const summary = eventPayloadText(event, 'summary');
   const interventionPreview = eventPayloadText(event, 'interventionPreview');
+  const durationMs = eventPayloadText(event, 'durationMs');
 
   if (event.type === 'agent.started') {
     return {
@@ -211,6 +212,16 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
       title: `${actorLabel(agentMap, event.actor)} 지시 수신 처리`,
       detail: summary ?? '내부 이벤트',
       body: interventionPreview,
+      route: false,
+      tone: 'normal',
+    };
+  }
+  if (event.type === 'message.sent' && event.payload.adapterRun === true) {
+    return {
+      ...logBase(event),
+      title: `${actorLabel(agentMap, event.actor)} adapter output`,
+      detail: [adapter, durationMs ? `${durationMs}ms` : undefined].filter(Boolean).join(' · ') || event.type,
+      body: summary,
       route: false,
       tone: 'normal',
     };

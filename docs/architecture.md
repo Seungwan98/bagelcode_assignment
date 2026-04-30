@@ -32,6 +32,8 @@ Next.js App
   └─ Runner Launcher
 
 Runner Process
+  ├─ Agent Definition Registry
+  ├─ Agent Session Runtime
   ├─ Message Bus
   ├─ Agent Adapters
   ├─ Event Writer
@@ -82,16 +84,30 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 
 ### Runner Process
 
-실제 에이전트 협업을 진행하는 실행 루프다.
+실제 에이전트 협업을 진행하는 실행 루프다. AgentBoard가 session context를 소유하고, adapter 출력은 그 context에 저장되는 실행 결과로만 취급한다.
 
 주요 책임:
 
 - Run 초기화
-- Agent adapter 시작/정지
+- Agent definition 조회
+- 최신 사용자 요청 turn 식별
+- `messages.jsonl` 기반 visible conversation과 agent handoff context 구성
+- Agent별 prompt 조립과 adapter 호출
 - Agent 간 메시지 라우팅
 - 제어 명령에 따른 runner 정지
 - Event log 기록
 - 최종 artifact 작성
+
+### Agent Session Runtime
+
+OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지하고 각 Agent 호출에 context를 주입한다. 다만 과제 증명을 위해 Agent 간 handoff는 명시적인 `AgentMessage`로 남긴다.
+
+원칙:
+
+- Codex CLI stdout은 직접 Agent 간 통신 채널이 아니라 adapter 실행 결과다.
+- Runtime은 최신 `user_intervention` 이후의 Agent handoff만 이번 turn context로 본다.
+- Planner, Engineer, Reviewer는 고정 순서로 실행한다.
+- Reviewer 출력은 `reviewer -> planner` review 로그와 `reviewer -> user` 최종 답변으로 모두 저장한다.
 
 ### Message Bus
 
@@ -111,7 +127,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 지원 대상:
 
 - `MockAgentAdapter`: README 기본 데모. 외부 key 없이 deterministic하게 동작한다.
-- `CliAgentAdapter`: optional. 로컬 `codex` CLI를 `shell: false`로 실행하고 stdout을 agent message로 저장한다.
+- `CliAgentAdapter`: optional. 로컬 `codex` CLI를 `shell: false`로 실행하고 stdout을 runtime에 반환한다. Runtime이 stdout을 Agent message로 저장하고 다음 Agent prompt context에 주입한다.
 - Firebase/Cloud adapter: optional future work. MVP 기본 경로를 깨면 안 된다.
 
 CLI mode 기본 role 매핑:
@@ -160,14 +176,15 @@ Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> a
 ### 2. Agent 간 협업
 
 ```text
-Planner -> Message Bus -> Engineer -> Message Bus -> Reviewer -> Artifact
+User request -> Agent Session Runtime -> Planner -> Message Bus -> Engineer -> Message Bus -> Reviewer -> User answer + Artifact
 ```
 
-1. Planner가 Engineer에게 `instruction` 메시지를 보낸다.
-2. Message Bus가 `messages.jsonl`과 Engineer inbox에 기록한다.
-3. Engineer가 `progress`, `result` 메시지를 보낸다.
-4. Reviewer가 결과를 검토한다.
-5. Runner가 `artifacts/final-report.md`를 갱신한다.
+1. Runtime이 최신 사용자 요청과 최근 user-facing 대화를 context로 만든다.
+2. Planner adapter 출력이 `planner -> engineer` `instruction` 메시지로 저장된다.
+3. Engineer adapter 출력은 Planner handoff를 포함한 prompt로 생성되고 `engineer -> reviewer` `result` 메시지로 저장된다.
+4. Reviewer adapter 출력은 이번 turn의 모든 handoff context를 포함한 prompt로 생성된다.
+5. Reviewer 출력은 `reviewer -> planner` `review` 로그와 `reviewer -> user` `result` 답변으로 저장된다.
+6. Runner가 `artifacts/final-report.md`를 갱신한다.
 
 ### 3. 사용자 요청 turn
 

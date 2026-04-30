@@ -14,6 +14,7 @@ import type {
   RunState,
 } from '../protocol/types';
 import { resolveAdapterForRole } from '../runner/agent-config';
+import { getAgentDefinition } from '../runner/agent-definitions';
 import { createId, nowIso } from '../utils/ids';
 import { appendJsonl, readJsonl } from '../utils/jsonl';
 
@@ -27,12 +28,6 @@ const ACTIVE_RUN_STATUSES = new Set<Run['status']>(['created', 'running', 'pause
 const CLIENT_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{3,128}$/;
 const MAX_SESSION_RECENT_RUNS = 12;
 const DEFAULT_STALE_RUN_AFTER_MS = 15 * 60 * 1000;
-const DISPLAY_NAMES: Record<AgentRole, string> = {
-  planner: 'Planner Agent',
-  engineer: 'Engineer Agent',
-  reviewer: 'Reviewer Agent',
-};
-
 export function runDir(runId: string): string {
   return join(getAgentboardRoot(), runId);
 }
@@ -78,7 +73,7 @@ export function createAgentStates(roles: AgentRole[] = DEFAULT_AGENTS, mode: Run
   return roles.map((role) => ({
     id: role,
     role,
-    displayName: DISPLAY_NAMES[role],
+    displayName: getAgentDefinition(role).displayName,
     adapter: resolveAdapterForRole(role, mode),
     status: 'idle',
   }));

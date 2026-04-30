@@ -1,7 +1,7 @@
-import type { AgentRole, MessageKind, RunState } from '@/lib/protocol/types';
-import { sendMessage } from '@/lib/bus/message-bus';
+import type { AgentRole, RunState } from '@/lib/protocol/types';
 import { resolveCliAdapterForRole, type CliAdapterKind } from '@/lib/runner/agent-config';
 import { CliAgentAdapter, resolveCliCommandConfig } from '@/lib/runner/cli-agent-adapter';
+import { runAgentConversation, type AgentExecutionInput } from '@/lib/runner/agent-session-runtime';
 import { appendEvent, readMessages, readState, updateAgentStatus, updateRunStatus, writeArtifact } from '@/lib/store/file-store';
 import { createId, nowIso } from '@/lib/utils/ids';
 
@@ -49,45 +49,44 @@ function adapterKindForRole(state: RunState, role: AgentRole): CliAdapterKind {
 
 async function invokeAgent(input: {
   state: RunState;
-  role: AgentRole;
-  to: string;
-  kind: MessageKind;
+  execution: AgentExecutionInput;
   prompt: string;
   signal: AbortSignal;
 }): Promise<string> {
-  const adapterKind = adapterKindForRole(input.state, input.role);
+  const adapterKind = adapterKindForRole(input.state, input.execution.definition.id);
   const adapter = new CliAgentAdapter(adapterKind);
-  await updateAgentStatus(input.state.run.id, input.role, 'thinking');
+  await updateAgentStatus(input.state.run.id, input.execution.definition.id, 'thinking');
   await appendEvent(input.state.run.id, {
     id: createId('evt'),
     runId: input.state.run.id,
     type: 'agent.started',
-    actor: input.role,
-    payload: { role: input.role, adapter: adapterKind },
+    actor: input.execution.definition.id,
+    payload: {
+      role: input.execution.definition.id,
+      adapter: adapterKind,
+      description: input.execution.definition.description,
+      turnUserMessageId: input.execution.context.turnUserMessageId,
+    },
     createdAt: nowIso(),
   });
   const result = await adapter.run({
     runId: input.state.run.id,
-    role: input.role,
+    role: input.execution.definition.id,
     prompt: input.prompt,
     signal: input.signal,
   });
   const body = result.stdout || '(CLI stdout이 비어 있습니다.)';
-  await sendMessage({
-    runId: input.state.run.id,
-    from: input.role,
-    to: input.to,
-    kind: input.kind,
-    body,
-  });
   await appendEvent(input.state.run.id, {
     id: createId('evt'),
     runId: input.state.run.id,
     type: 'message.sent',
-    actor: input.role,
+    actor: input.execution.definition.id,
     payload: {
+      adapterRun: true,
+      summary: 'CLI adapter 출력이 AgentBoard session runtime에 저장되었습니다.',
       adapter: adapterKind,
       durationMs: result.durationMs,
+      stdoutBytes: Buffer.byteLength(body, 'utf8'),
       stderr: result.stderr ? result.stderr.slice(0, 4000) : undefined,
     },
     createdAt: nowIso(),
@@ -95,63 +94,18 @@ async function invokeAgent(input: {
   return body;
 }
 
-function latestUserRequest(messages: Awaited<ReturnType<typeof readMessages>>, fallback: string): string {
-  return messages.filter((message) => message.kind === 'user_intervention').at(-1)?.body ?? fallback;
-}
-
-function buildPlannerPrompt(state: RunState, userRequest: string): string {
-  return [
-    '너는 AgentBoard의 Planner Agent다.',
-    '사용자의 최신 채팅 요청을 분석해서 Engineer Agent에게 전달할 답변 계획을 작성해라.',
-    '출력은 한국어 Markdown으로, 요청 의도와 답변/구현 방향을 짧게 정리해라.',
-    '',
-    `Run ID: ${state.run.id}`,
-    `Initial brief: ${state.run.brief}`,
-    `Latest user request: ${userRequest}`,
-  ].join('\n');
-}
-
-function buildEngineerPrompt(state: RunState, userRequest: string, plan: string): string {
-  return [
-    '너는 AgentBoard의 Engineer Agent다.',
-    'Planner의 계획을 받아 최신 사용자 요청에 대한 구체적인 해결/구현 접근을 작성해라.',
-    '출력은 한국어 Markdown으로, 파일/모듈/검증 관점을 포함해라.',
-    '',
-    `Initial brief: ${state.run.brief}`,
-    `Latest user request: ${userRequest}`,
-    '',
-    'Planner output:',
-    plan,
-  ].join('\n');
-}
-
-async function buildReviewerPrompt(state: RunState, userRequest: string, plan: string, engineeringResult: string): Promise<string> {
-  const interventions = (await readMessages(state.run.id)).filter((message) => message.kind === 'user_intervention');
-  const interventionSummary = interventions.length
-    ? interventions.map((message, index) => `${index + 1}. to=${message.to}: ${message.body}`).join('\n')
-    : '사용자 개입 없음';
-  return [
-    '너는 AgentBoard의 Reviewer Agent다.',
-    'Planner와 Engineer의 결과를 검토해 사용자에게 직접 보여줄 최종 답변을 작성해라.',
-    '출력은 한국어 Markdown으로, 최신 요청에 대한 답변과 필요한 검증/주의점을 포함해라.',
-    '',
-    `Initial brief: ${state.run.brief}`,
-    `Latest user request: ${userRequest}`,
-    '',
-    'Planner output:',
-    plan,
-    '',
-    'Engineer output:',
-    engineeringResult,
-    '',
-    'User interventions:',
-    interventionSummary,
-  ].join('\n');
-}
-
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+async function shouldStop(runId: string, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return true;
+  try {
+    return (await readState(runId)).run.status === 'stopped';
+  } catch {
+    return true;
+  }
 }
 
 async function runScript(runId: string, signal: AbortSignal): Promise<void> {
@@ -168,63 +122,38 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     });
 
     const state = await readState(runId);
-    const userRequest = latestUserRequest(await readMessages(runId), state.run.brief);
-    currentRole = 'planner';
-    const plan = await invokeAgent({
+    const messages = await readMessages(runId);
+    const result = await runAgentConversation({
       state,
-      role: 'planner',
-      to: 'engineer',
-      kind: 'instruction',
-      prompt: buildPlannerPrompt(state, userRequest),
-      signal,
+      messages,
+      shouldStop: () => shouldStop(runId, signal),
+      invokeAgent: async (execution) => {
+        currentRole = execution.definition.id;
+        return invokeAgent({ state, execution, prompt: execution.prompt, signal });
+      },
     });
 
-    currentRole = 'engineer';
-    const engineeringResult = await invokeAgent({
-      state,
-      role: 'engineer',
-      to: 'reviewer',
-      kind: 'result',
-      prompt: buildEngineerPrompt(state, userRequest, plan),
-      signal,
-    });
-
-    currentRole = 'reviewer';
-    const reviewerResult = await invokeAgent({
-      state,
-      role: 'reviewer',
-      to: 'planner',
-      kind: 'review',
-      prompt: await buildReviewerPrompt(state, userRequest, plan, engineeringResult),
-      signal,
-    });
-
-    await sendMessage({
-      runId,
-      from: 'reviewer',
-      to: 'user',
-      kind: 'result',
-      body: reviewerResult,
-    });
+    if (result.stopped) return;
 
     const finalReport = [
       '# AgentBoard CLI Collaboration Report',
       '',
       `- Run ID: ${runId}`,
       '- Mode: cli',
-      `- Latest User Request: ${userRequest}`,
+      `- Latest User Request: ${result.context.userRequest}`,
+      `- Turn User Message ID: ${result.context.turnUserMessageId}`,
       '',
       '## Planner Output',
       '',
-      plan,
+      result.outputs.planner ?? '',
       '',
       '## Engineer Output',
       '',
-      engineeringResult,
+      result.outputs.engineer ?? '',
       '',
       '## Reviewer Output',
       '',
-      reviewerResult,
+      result.outputs.reviewer ?? '',
     ].join('\n');
     await writeArtifact(runId, finalReport, 'reviewer');
 

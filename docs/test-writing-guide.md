@@ -50,13 +50,14 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 
 1. Message Bus unit/integration test
 2. JSONL store test
-3. Mock runner integration test
-4. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
-5. Control stop API와 runner cancellation test
-6. CLI adapter command parsing / fake CLI integration test
-7. Session persistence store/API test
-8. Chat UI state persistence smoke test
-9. Firebase adapter test는 optional
+3. Agent Session Runtime context/handoff test
+4. Mock runner integration test
+5. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
+6. Control stop API와 runner cancellation test
+7. CLI adapter command parsing / fake CLI integration test
+8. Session persistence store/API test
+9. Chat UI state persistence smoke test
+10. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -66,6 +67,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 테스트가 생성한 `.agentboard` state는 테스트 종료 후 삭제한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
+- Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Reviewer user 답변을 검증한다.
 - Browser localStorage 기반 UI state는 서버 audit state와 분리해 테스트한다.
 
 ## 예시: JSONL store test

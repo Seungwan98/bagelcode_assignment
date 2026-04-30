@@ -100,7 +100,7 @@ AGENTBOARD_CLI_PROMPT_MODE=stdin \
 npm run dev
 ```
 
-현재 CLI mode는 세 역할이 모두 Codex를 사용한다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+현재 CLI mode는 세 역할이 모두 Codex를 사용한다. AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
 
 CLI가 prompt를 argument로 받는 경우:
 

@@ -4,12 +4,13 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 Planner, Enginee
 
 ## 핵심 증명
 
-- Planner, Engineer, Reviewer mock agents가 structured message를 교환합니다.
+- Planner, Engineer, Reviewer가 AgentBoard message bus를 통해 structured handoff message를 교환합니다.
 - 채팅 화면이 SSE(EventSource)로 user-facing message를 실시간 표시하고, 에이전트 간 전달 과정은 상단 `Logs` 버튼에서 확인합니다.
 - 사용자가 메시지를 보내면 Agents가 답변을 생성하고, 생성 중에는 전송을 잠근 뒤 `취소` 버튼을 제공합니다.
 - 브라우저별 `clientSessionId`로 최근 run을 연결하고, 루트 페이지에서 이전 대화를 이어갈 수 있습니다.
 - 채팅방의 선택 agent, Logs/보고서 열림 상태는 run별로 브라우저에 복원됩니다.
 - 기본 mock mode는 Firebase key나 실제 AI CLI 없이 실행됩니다.
+- CLI mode에서 Codex stdout은 AgentBoard session runtime에 저장되고 다음 Agent prompt context로 주입됩니다.
 
 ## 설치
 
@@ -79,7 +80,7 @@ npm run build
 ## Optional integrations
 
 - Firebase config는 `docs/configuration.md`를 참고하세요.
-- 실제 `codex` CLI adapter는 `cli` mode에서 사용할 수 있습니다. 현재 CLI mode는 Planner, Engineer, Reviewer가 모두 Codex를 사용합니다.
+- 실제 `codex` CLI adapter는 `cli` mode에서 사용할 수 있습니다. 현재 CLI mode는 Planner, Engineer, Reviewer가 모두 Codex를 사용하며 AgentBoard가 session context를 관리합니다.
 
 CLI mode 예시:
 
