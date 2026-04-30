@@ -121,18 +121,15 @@ FIREBASE_PRIVATE_KEY=
 
 ## CLI adapter config
 
-Optional real agent adapter용 명령이다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면
-Planner, Engineer, Reviewer가 각자 매핑된 로컬 CLI 명령을 한 번씩 실행하고 출력 결과를 메시지로 전달한다.
+현재 실제 CLI adapter는 Codex만 사용한다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면 Planner, Engineer, Reviewer가 모두 같은 Codex 명령을 역할별 prompt와 함께 한 번씩 실행하고 출력 결과를 메시지로 전달한다.
 
 ```bash
 AGENTBOARD_PLANNER_ADAPTER=codex
-AGENTBOARD_ENGINEER_ADAPTER=claude
-AGENTBOARD_REVIEWER_ADAPTER=gemini
+AGENTBOARD_ENGINEER_ADAPTER=codex
+AGENTBOARD_REVIEWER_ADAPTER=codex
 AGENTBOARD_CODEX_CMD=codex
-AGENTBOARD_CLAUDE_CMD=claude
-AGENTBOARD_GEMINI_CMD=gemini
 AGENTBOARD_CLI_PROMPT_MODE=stdin
-AGENTBOARD_CLI_ALLOWLIST=codex,claude,gemini
+AGENTBOARD_CLI_ALLOWLIST=codex
 AGENTBOARD_CLI_TIMEOUT_MS=120000
 ```
 
@@ -141,8 +138,6 @@ AGENTBOARD_CLI_TIMEOUT_MS=120000
 | 값 | 설명 |
 | --- | --- |
 | `codex` | `AGENTBOARD_CODEX_CMD`로 실행 |
-| `claude` | `AGENTBOARD_CLAUDE_CMD`로 실행 |
-| `gemini` | `AGENTBOARD_GEMINI_CMD`로 실행 |
 
 prompt 전달 방식:
 
@@ -151,19 +146,16 @@ prompt 전달 방식:
 | `stdin` | 기본값. prompt를 process stdin으로 전달 |
 | `append-arg` | prompt를 마지막 CLI argument로 전달 |
 
-CLI별 prompt mode override:
+Codex 전용 prompt mode override:
 
 ```bash
 AGENTBOARD_CODEX_PROMPT_MODE=append-arg
-AGENTBOARD_CLAUDE_PROMPT_MODE=append-arg
-AGENTBOARD_GEMINI_PROMPT_MODE=append-arg
 ```
 
 명령에 기본 옵션이 필요하면 quote로 감싼다.
 
 ```bash
-AGENTBOARD_CLAUDE_CMD="claude -p"
-AGENTBOARD_GEMINI_CMD="gemini -p"
+AGENTBOARD_CODEX_CMD="codex exec"
 ```
 
 보안 규칙:

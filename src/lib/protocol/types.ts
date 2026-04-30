@@ -2,7 +2,7 @@ export type RunStatus = 'created' | 'running' | 'paused' | 'completed' | 'failed
 export type RunMode = 'mock' | 'cli';
 export type AgentRole = 'planner' | 'engineer' | 'reviewer';
 export type AgentStatus = 'idle' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed';
-export type AgentAdapterKind = 'mock' | 'codex' | 'claude' | 'gemini';
+export type AgentAdapterKind = 'mock' | 'codex';
 
 export type MessageKind =
   | 'instruction'

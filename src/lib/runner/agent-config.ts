@@ -4,8 +4,8 @@ export type CliAdapterKind = Exclude<AgentAdapterKind, 'mock'>;
 
 const DEFAULT_CLI_ADAPTER_BY_ROLE: Record<AgentRole, CliAdapterKind> = {
   planner: 'codex',
-  engineer: 'claude',
-  reviewer: 'gemini',
+  engineer: 'codex',
+  reviewer: 'codex',
 };
 
 const ROLE_ENV_KEYS: Record<AgentRole, string> = {
@@ -15,14 +15,14 @@ const ROLE_ENV_KEYS: Record<AgentRole, string> = {
 };
 
 export function isCliAdapterKind(value: string): value is CliAdapterKind {
-  return value === 'codex' || value === 'claude' || value === 'gemini';
+  return value === 'codex';
 }
 
 export function resolveCliAdapterForRole(role: AgentRole, env: NodeJS.ProcessEnv = process.env): CliAdapterKind {
   const configured = env[ROLE_ENV_KEYS[role]]?.trim().toLowerCase();
   if (configured) {
     if (!isCliAdapterKind(configured)) {
-      throw new Error(`${ROLE_ENV_KEYS[role]} must be one of codex, claude, gemini`);
+      throw new Error(`${ROLE_ENV_KEYS[role]} must be codex`);
     }
     return configured;
   }

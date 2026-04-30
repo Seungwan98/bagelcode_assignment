@@ -40,17 +40,13 @@ export class CliAgentError extends Error {
 
 const COMMAND_ENV_KEYS: Record<CliAdapterKind, string> = {
   codex: 'AGENTBOARD_CODEX_CMD',
-  claude: 'AGENTBOARD_CLAUDE_CMD',
-  gemini: 'AGENTBOARD_GEMINI_CMD',
 };
 
 const PROMPT_MODE_ENV_KEYS: Record<CliAdapterKind, string> = {
   codex: 'AGENTBOARD_CODEX_PROMPT_MODE',
-  claude: 'AGENTBOARD_CLAUDE_PROMPT_MODE',
-  gemini: 'AGENTBOARD_GEMINI_PROMPT_MODE',
 };
 
-const DEFAULT_ALLOWLIST = ['codex', 'claude', 'gemini'];
+const DEFAULT_ALLOWLIST = ['codex'];
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 256_000;
 

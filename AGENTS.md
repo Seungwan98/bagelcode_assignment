@@ -16,7 +16,7 @@ Primary proof points:
 - Optimize for ASAP delivery: build the thinnest end-to-end path first, then harden.
 - Prefer a working vertical slice over broad scaffolding.
 - Default demo mode must use deterministic mock agents so reviewers can run the project locally.
-- Real Claude/Codex/Gemini/Firebase integrations are optional adapters, not blockers for the base demo.
+- Real Codex/Firebase integrations are optional adapters, not blockers for the base demo.
 - Keep every feature tied to assignment evidence: agent-agent messaging, user observation, user intervention, artifact output.
 
 ## Recommended stack
@@ -33,7 +33,7 @@ Primary proof points:
 - Store messages as append-only records; do not mutate history except for derived state snapshots.
 - Use a small adapter boundary for agents:
   - `MockAgentAdapter` for deterministic README demo.
-  - `CliAgentAdapter` for optional local `codex`, `claude`, or `gemini` execution.
+  - `CliAgentAdapter` for optional local `codex` execution. In CLI mode, Planner/Engineer/Reviewer all use Codex unless a future adapter is explicitly added.
   - Future Firebase/Cloud adapters must not break mock mode.
 - User interventions are first-class messages from `user` to an agent or `all`.
 - Final artifacts must reference the run, participating agents, major messages, and any user intervention.

@@ -112,20 +112,16 @@ spawn codex ENOENT
 ### 해결
 
 - Mock mode로 먼저 실행한다.
-- CLI mode가 필요한 경우 로컬에 해당 CLI가 설치되어 있고 환경변수가 설정되어 있는지 확인한다.
+- CLI mode가 필요한 경우 로컬에 Codex CLI가 설치되어 있고 환경변수가 설정되어 있는지 확인한다.
 
 ```bash
 command -v codex
-command -v claude
-command -v gemini
 ```
 
 환경변수도 확인한다.
 
 ```bash
 echo $AGENTBOARD_CODEX_CMD
-echo $AGENTBOARD_CLAUDE_CMD
-echo $AGENTBOARD_GEMINI_CMD
 echo $AGENTBOARD_CLI_PROMPT_MODE
 ```
 

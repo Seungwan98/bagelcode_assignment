@@ -12,7 +12,7 @@
 - npm
 - macOS/Linux 권장
 
-Mock mode는 Firebase key, Claude/Codex/Gemini CLI 없이 실행되어야 한다.
+Mock mode는 Firebase key 또는 Codex CLI 없이 실행되어야 한다.
 
 ## 설치
 
@@ -87,16 +87,14 @@ http://localhost:3000
 ```bash
 AGENTBOARD_MODE=cli \
 AGENTBOARD_PLANNER_ADAPTER=codex \
-AGENTBOARD_ENGINEER_ADAPTER=claude \
-AGENTBOARD_REVIEWER_ADAPTER=gemini \
+AGENTBOARD_ENGINEER_ADAPTER=codex \
+AGENTBOARD_REVIEWER_ADAPTER=codex \
 AGENTBOARD_CODEX_CMD=codex \
-AGENTBOARD_CLAUDE_CMD=claude \
-AGENTBOARD_GEMINI_CMD=gemini \
 AGENTBOARD_CLI_PROMPT_MODE=stdin \
 npm run dev
 ```
 
-CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+현재 CLI mode는 세 역할이 모두 Codex를 사용한다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
 
 CLI가 prompt를 argument로 받는 경우:
 

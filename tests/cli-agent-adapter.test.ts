@@ -48,11 +48,11 @@ test('CliAgentAdapter appends prompt as argument when configured', async () => {
   try {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      AGENTBOARD_CLAUDE_CMD: `${process.execPath} ${fake.script} --print`,
+      AGENTBOARD_CODEX_CMD: `${process.execPath} ${fake.script} --print`,
       AGENTBOARD_CLI_ALLOWLIST: basename(process.execPath),
-      AGENTBOARD_CLAUDE_PROMPT_MODE: 'append-arg',
+      AGENTBOARD_CODEX_PROMPT_MODE: 'append-arg',
     };
-    const adapter = new CliAgentAdapter('claude', resolveCliCommandConfig('claude', env));
+    const adapter = new CliAgentAdapter('codex', resolveCliCommandConfig('codex', env));
     const result = await adapter.run({ runId: 'run_cli', role: 'engineer', prompt: 'argument prompt' });
     const parsed = JSON.parse(result.stdout) as { args: string[]; stdin: string };
     assert.deepEqual(parsed.args, ['--print', 'argument prompt']);

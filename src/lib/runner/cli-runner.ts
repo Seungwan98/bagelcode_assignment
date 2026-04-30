@@ -43,7 +43,7 @@ export function stopCliRun(runId: string): void {
 
 function adapterKindForRole(state: RunState, role: AgentRole): CliAdapterKind {
   const adapter = state.agents.find((agent) => agent.role === role)?.adapter;
-  if (adapter === 'codex' || adapter === 'claude' || adapter === 'gemini') return adapter;
+  if (adapter === 'codex') return adapter;
   return resolveCliAdapterForRole(role);
 }
 
