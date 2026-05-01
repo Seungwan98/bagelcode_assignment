@@ -9,7 +9,7 @@ AgentBoard에서 사용하는 설정값, CLI adapter 환경변수, ignore 정책
 - 기본 실행은 `mock` mode다.
 - 실제 secret은 commit하지 않는다.
 - commit 가능한 파일은 예시 템플릿만 둔다.
-- 실제 AI CLI는 optional이다.
+- 실제 AI CLI는 optional이며, 사용할 경우 `tmux-codex`를 우선한다.
 
 ## 환경변수 파일
 
@@ -39,53 +39,21 @@ AGENTBOARD_MODE=mock
 | 값 | 설명 |
 | --- | --- |
 | `mock` | 기본값. 외부 key 없이 deterministic agent flow 실행 |
-| `cli` | optional. 로컬 AI CLI adapter 사용 |
+| `cli` | optional. 로컬 Codex adapter 사용. 실제 작업은 `tmux-codex` 권장 |
 
 
 ## CLI adapter config
 
-현재 실제 CLI adapter는 Codex만 사용한다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면 Orchestrator가 먼저 Agent 실행 계획 JSON을 만들고, 선택된 Planner, Engineer, Reviewer가 같은 Codex 명령을 역할별 prompt와 함께 실행하고, 최종 사용자 답변은 Orchestrator 검증 단계에서 생성한다. Codex stdout은 직접 Agent 간 통신이 아니라 AgentBoard session runtime이 message로 저장하고 다음 Agent prompt context에 주입하는 adapter 출력이다.
-
-```bash
-AGENTBOARD_ORCHESTRATOR_ADAPTER=codex
-AGENTBOARD_PLANNER_ADAPTER=codex
-AGENTBOARD_ENGINEER_ADAPTER=codex
-AGENTBOARD_REVIEWER_ADAPTER=codex
-AGENTBOARD_CODEX_CMD="codex exec"
-AGENTBOARD_CLI_PROMPT_MODE=stdin
-AGENTBOARD_CLI_ALLOWLIST=codex
-AGENTBOARD_CLI_TIMEOUT_MS=120000
-```
+현재 실제 AI adapter는 Codex만 사용한다. 기본 데모는 여전히 `mock` mode이며, `AGENTBOARD_MODE=cli` 또는 Chat UI의 `cli` mode는 로컬 Codex가 준비된 경우에만 사용한다. 실제 작업과 시연은 role별 persistent session을 유지하는 `tmux-codex`를 우선한다. Codex 출력은 직접 Agent 간 통신 채널이 아니라 AgentBoard session runtime이 message로 저장하고 다음 Agent prompt context에 주입하는 adapter 출력이다.
 
 지원 adapter 값:
 
-| 값 | 설명 |
-| --- | --- |
-| `codex` | `AGENTBOARD_CODEX_CMD`로 실행 |
-| `tmux-codex` | role별 persistent tmux session에 Codex를 띄우고 AgentBoard 완료 marker를 감지할 때까지 대기 |
+| 값 | 권장도 | 설명 |
+| --- | --- | --- |
+| `tmux-codex` | 권장 | role별 persistent tmux session에 Codex를 띄우고 AgentBoard 완료 marker, idle fallback, 권한 요청 이벤트를 처리 |
+| `codex` | fallback | `codex exec` 같은 one-shot command 실행. 짧은 smoke 검증용으로만 사용 |
 
-prompt 전달 방식:
-
-| 값 | 설명 |
-| --- | --- |
-| `stdin` | 기본값. prompt를 process stdin으로 전달 |
-| `append-arg` | prompt를 마지막 CLI argument로 전달 |
-
-Codex 전용 prompt mode override:
-
-```bash
-AGENTBOARD_CODEX_PROMPT_MODE=append-arg
-```
-
-명령에 기본 옵션이 필요하면 quote로 감싼다.
-
-```bash
-AGENTBOARD_CODEX_CMD="codex exec"
-```
-
-## tmux Codex session config
-
-긴 작업을 수행하는 실제 Codex 실행은 role별 adapter를 `tmux-codex`로 설정하는 것을 권장한다. 이 모드에서는 AgentBoard가 prompt에 transport 완료 marker 규칙을 추가하고, tmux pane을 polling하여 `AGENTBOARD_DONE` marker가 보일 때 `session.completed` 이벤트를 기록한다. Codex가 `AGENTBOARD_BEGIN` 이후 답변을 끝냈지만 `AGENTBOARD_DONE`을 누락한 채 idle prompt(`›`)로 돌아온 경우에는 같은 출력이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지된 뒤에만 `completionSource=idle-prompt-fallback`으로 완료 처리한다.
+권장 `tmux-codex` 설정:
 
 ```bash
 AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex
@@ -134,6 +102,21 @@ tmux 관련 값:
 
 - `tmux-codex`는 persistent pane에 prompt를 계속 주입하므로 `codex exec`보다 interactive `codex --no-alt-screen`을 권장한다.
 - `codex exec`는 one-shot 실행용이라 tmux pane 안에서 완료 marker를 안정적으로 기다리는 구조와 맞지 않는다.
+
+One-shot Codex fallback:
+
+```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=codex
+AGENTBOARD_PLANNER_ADAPTER=codex
+AGENTBOARD_ENGINEER_ADAPTER=codex
+AGENTBOARD_REVIEWER_ADAPTER=codex
+AGENTBOARD_CODEX_CMD="codex exec"
+AGENTBOARD_CLI_PROMPT_MODE=stdin
+AGENTBOARD_CLI_ALLOWLIST=codex
+AGENTBOARD_CLI_TIMEOUT_MS=120000
+```
+
+이 fallback은 process stdout 종료에 의존하므로 긴 작업, 권한 prompt, session 유지가 중요한 시연에는 사용하지 않는다. CLI가 prompt를 argument로 받는 경우에만 `AGENTBOARD_CODEX_PROMPT_MODE=append-arg` 또는 `AGENTBOARD_CLI_PROMPT_MODE=append-arg`를 사용한다.
 
 보안 규칙:
 

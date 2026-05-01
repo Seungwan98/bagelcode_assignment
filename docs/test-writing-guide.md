@@ -61,8 +61,8 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 5. Mock runner integration test
 6. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
 7. Control stop API와 runner cancellation test
-8. CLI adapter command parsing / fake CLI integration test
-9. `tmux-codex` delayed DONE / idle fallback / approval approve-reject regression test
+8. `tmux-codex` delayed DONE / idle fallback / approval approve-reject regression test
+9. One-shot CLI adapter command parsing / fake CLI integration test
 10. 진행 중 intervention queue와 Orchestrator continue/restart/ask_user decision test
 11. Session persistence store/API test
 12. Chat UI state persistence smoke test

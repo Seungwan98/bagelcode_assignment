@@ -7,12 +7,12 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 Orchestrator가 
 - Orchestrator가 사용자 요청을 분석해 필요한 Agent 실행 계획 JSON을 만들고, AgentBoard message bus를 통해 structured assignment/handoff message를 교환합니다.
 - 루트 화면은 처음부터 챗봇형 workspace이며, 좌측 세션 목록에서 대화별 기록을 선택/생성할 수 있습니다.
 - 채팅 화면이 SSE(EventSource)로 user-facing message를 실시간 표시하고, 에이전트 간 전달 과정은 `Agent Collaboration` 타임라인과 `Logs` 버튼에서 확인합니다.
-- 사용자가 메시지를 보내면 Agents가 답변을 생성하고, 생성 중에는 전송을 잠근 뒤 `취소` 버튼을 제공합니다.
+- 사용자가 메시지를 보내면 Agents가 답변을 생성하고, 생성 중에도 추가 지시를 보내거나 `취소` 버튼으로 중단할 수 있습니다.
 - 브라우저별 `clientSessionId`로 최근 run을 연결하고, 루트 페이지에서 이전 대화를 이어갈 수 있습니다.
 - 좌측 세션 목록에서 완료/중단된 대화를 삭제할 수 있습니다.
 - 채팅방의 선택 agent, Logs/보고서 열림 상태는 run별로 브라우저에 복원됩니다.
 - 기본 mock mode는 외부 key나 실제 AI CLI 없이 실행됩니다.
-- CLI mode에서 Codex stdout은 AgentBoard session runtime에 저장되고 다음 Agent prompt context로 주입됩니다.
+- 실제 Codex 실행은 `tmux-codex` persistent session을 권장하며, 출력은 AgentBoard session runtime에 저장되고 다음 Agent prompt context로 주입됩니다.
 
 ## 설치
 
@@ -82,15 +82,18 @@ npm run build
 
 ## Optional integrations
 
-- 실제 `codex` CLI adapter는 `cli` mode에서 사용할 수 있습니다. 현재 CLI mode는 Orchestrator, Planner, Engineer, Reviewer가 모두 Codex를 사용할 수 있으며 AgentBoard가 session context를 관리합니다.
+- 실제 `codex` CLI adapter는 `cli` mode에서 사용할 수 있습니다. 제출/시연용 실제 실행은 role별 `tmux-codex` session을 권장합니다. AgentBoard가 session context, 완료 marker, 권한 요청 이벤트를 관리합니다.
 
-CLI mode 예시:
+권장 CLI mode 예시:
 
 ```bash
 AGENTBOARD_MODE=cli \
-AGENTBOARD_CODEX_CMD="codex exec" \
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex \
+AGENTBOARD_PLANNER_ADAPTER=tmux-codex \
+AGENTBOARD_ENGINEER_ADAPTER=tmux-codex \
+AGENTBOARD_REVIEWER_ADAPTER=tmux-codex \
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen" \
 npm run dev
 ```
 
-CLI가 prompt를 인자로 받는 방식이면 `AGENTBOARD_CLI_PROMPT_MODE=append-arg` 또는
-`AGENTBOARD_CODEX_PROMPT_MODE=append-arg`를 설정합니다.
+`codex exec` 기반 one-shot adapter는 짧은 smoke 실행용 fallback으로만 사용합니다.

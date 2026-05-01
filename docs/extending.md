@@ -55,16 +55,17 @@ interface AgentAdapter {
 5. stop cleanup 구현
 6. mock mode 회귀 테스트 실행
 
-## CLI adapter 확장
+## CLI/tmux adapter 확장
 
-현재 구현된 `CliAgentAdapter`는 local command를 `spawn(..., { shell: false })`로 실행하고,
-stdout을 Agent Session Runtime에 반환한다. Runtime이 stdout을 message로 저장하고 다음 Agent prompt context에 주입한다. `cli` run은 다음 순서로 진행한다.
+현재 real-agent 권장 경로는 `TmuxSessionAdapter`다. role별 persistent session을 유지하고, `AGENTBOARD_BEGIN`/`AGENTBOARD_DONE` marker와 권한 요청 event를 통해 Web UI가 진행 상황을 관찰한다. `CliAgentAdapter`는 local command를 `spawn(..., { shell: false })`로 실행하는 one-shot fallback이며 짧은 smoke 실행에만 사용한다.
+
+`cli` run은 다음 순서로 진행한다.
 
 ```text
-Orchestrator CLI -> selected Agent CLI(s) -> Orchestrator verification -> final artifact
+Orchestrator Codex session -> selected Agent session(s) -> Orchestrator verification -> final artifact
 ```
 
-새 CLI를 붙일 때는 다음을 지킨다.
+새 adapter를 붙일 때는 다음을 지킨다.
 
 - 명령은 allowlist에 추가한다.
 - `shell: false` 실행을 기본으로 한다.
@@ -72,7 +73,14 @@ Orchestrator CLI -> selected Agent CLI(s) -> Orchestrator verification -> final 
 - CLI output은 adapter log와 AgentBoard structured message로 나눠 저장한다.
 - 실패 시 `error` event를 남긴다.
 
-추가 설정이 필요한 CLI는 command spec에 인자를 포함하거나 prompt mode를 바꾼다.
+추가 설정이 필요한 CLI는 command spec에 인자를 포함하되, 실제 시연 기본값은 persistent tmux session에 맞춘다.
+
+```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen"
+```
+
+One-shot command가 필요한 경우에만 prompt mode를 별도로 둔다.
 
 ```bash
 AGENTBOARD_CODEX_CMD="codex exec"

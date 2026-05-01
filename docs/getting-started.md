@@ -88,28 +88,23 @@ http://localhost:3000
 
 ## Optional CLI mode
 
-실제 AI CLI 연동은 기본 실행 경로가 아니다. 로컬에 CLI가 있고 환경변수를 설정한 뒤 사용한다.
+실제 AI CLI 연동은 기본 실행 경로가 아니다. 로컬에 Codex와 tmux가 있고 환경변수를 설정한 뒤 사용한다. 실제 시연은 `tmux-codex`를 권장한다.
 
-예시:
+권장 예시:
 
 ```bash
 AGENTBOARD_MODE=cli \
-AGENTBOARD_ORCHESTRATOR_ADAPTER=codex \
-AGENTBOARD_PLANNER_ADAPTER=codex \
-AGENTBOARD_ENGINEER_ADAPTER=codex \
-AGENTBOARD_REVIEWER_ADAPTER=codex \
-AGENTBOARD_CODEX_CMD="codex exec" \
-AGENTBOARD_CLI_PROMPT_MODE=stdin \
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex \
+AGENTBOARD_PLANNER_ADAPTER=tmux-codex \
+AGENTBOARD_ENGINEER_ADAPTER=tmux-codex \
+AGENTBOARD_REVIEWER_ADAPTER=tmux-codex \
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen" \
 npm run dev
 ```
 
-현재 CLI mode는 Orchestrator와 선택된 Agent들이 Codex를 사용한다. AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout이나 tmux pane output은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
 
-CLI가 prompt를 argument로 받는 경우:
-
-```bash
-AGENTBOARD_CLI_PROMPT_MODE=append-arg npm run dev
-```
+`codex exec` one-shot 설정은 짧은 smoke 검증용 fallback이다. 긴 작업, 권한 요청, 완료 감지가 중요한 시연에는 `tmux-codex`를 사용한다.
 
 ## 성공 기준
 

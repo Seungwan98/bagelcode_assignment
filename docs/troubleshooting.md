@@ -272,16 +272,28 @@ spawn codex ENOENT
 command -v codex
 ```
 
-환경변수도 확인한다.
+환경변수도 확인한다. 실제 시연은 `tmux-codex`를 권장한다.
 
 ```bash
 echo $AGENTBOARD_CODEX_CMD
-echo $AGENTBOARD_CLI_PROMPT_MODE
+echo $AGENTBOARD_ORCHESTRATOR_ADAPTER
+echo $AGENTBOARD_TMUX_CMD
 ```
 
-`codex adapter exited with code 1`이 바로 발생하면 interactive `codex`가 실행된 경우일 수 있다. AgentBoard는 non-interactive 실행이 필요하므로 command를 다음처럼 둔다.
+권장 설정:
 
 ```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex
+AGENTBOARD_PLANNER_ADAPTER=tmux-codex
+AGENTBOARD_ENGINEER_ADAPTER=tmux-codex
+AGENTBOARD_REVIEWER_ADAPTER=tmux-codex
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen"
+```
+
+`codex adapter exited with code 1`이 바로 발생하면 one-shot `codex` adapter에서 interactive `codex`를 실행했거나 `codex exec`가 실패한 경우일 수 있다. 짧은 smoke 검증에 one-shot을 써야 할 때만 다음처럼 둔다.
+
+```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=codex
 AGENTBOARD_CODEX_CMD="codex exec"
 AGENTBOARD_CLI_PROMPT_MODE=stdin
 ```

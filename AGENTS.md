@@ -16,7 +16,7 @@ Primary proof points:
 - Optimize for ASAP delivery: build the thinnest end-to-end path first, then harden.
 - Prefer a working vertical slice over broad scaffolding.
 - Default demo mode must use deterministic mock agents so reviewers can run the project locally.
-- Real Codex integrations are optional adapters, not blockers for the base demo.
+- Real Codex integrations are optional and should use persistent `tmux-codex` sessions first; they are not blockers for the base demo.
 - Keep every feature tied to assignment evidence: agent-agent messaging, user observation, user intervention, artifact output.
 
 ## Recommended stack
@@ -25,7 +25,7 @@ Primary proof points:
 - Server-Sent Events for server-to-browser event streaming.
 - POST APIs for user intervention and run controls.
 - JSONL files under `.agentboard/runs/` for the MVP event/message store.
-- Local file-backed mock mode remains the default persistence and demo execution path.
+- Local JSONL-backed mock mode remains the default persistence and demo execution path.
 
 ## Architecture rules
 
@@ -33,8 +33,8 @@ Primary proof points:
 - Store messages as append-only records; do not mutate history except for derived state snapshots.
 - Use a small adapter boundary for agents:
   - `MockAgentAdapter` for deterministic README demo.
-  - `CliAgentAdapter` for optional local `codex` execution. In CLI mode, Planner/Engineer/Reviewer all use Codex unless a future adapter is explicitly added.
-  - `TmuxSessionAdapter` for optional persistent Codex sessions. It must require AgentBoard transport markers, wait for a stable idle fallback before accepting missing `AGENTBOARD_DONE`, and surface Codex permission prompts as UI approval events.
+  - `TmuxSessionAdapter` for recommended real Codex execution. It must require AgentBoard transport markers, wait for a stable idle fallback before accepting missing `AGENTBOARD_DONE`, and surface Codex permission prompts as UI approval events.
+  - `CliAgentAdapter` for short one-shot Codex smoke runs only; it should not be presented as the primary real-agent path while tmux sessions exist.
 - User interventions are first-class messages from `user` to an agent or `all`.
 - Active runs must still accept user intervention messages; Orchestrator decides at the next checkpoint whether to continue, restart, or ask the user for clarification.
 - Reviewer is a conservative quality gate only: it reports accuracy, omissions, risks, and recommendations back to Orchestrator instead of writing the user-facing final answer.
