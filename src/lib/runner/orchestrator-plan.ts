@@ -101,6 +101,63 @@ function extractJsonObject(raw: string): string {
   return candidate.slice(start, end + 1);
 }
 
+function repairHardWrappedJsonStringLiterals(raw: string): string {
+  let repaired = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (!inString) {
+      repaired += char;
+      if (char === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      repaired += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      repaired += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      repaired += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === '\n' || char === '\r') {
+      if (!repaired.endsWith(' ')) repaired += ' ';
+      while (raw[index + 1] === ' ' || raw[index + 1] === '\t') index += 1;
+      continue;
+    }
+
+    repaired += char;
+  }
+
+  return repaired;
+}
+
+function parseJsonObject<T>(raw: string): T {
+  const json = extractJsonObject(raw);
+  try {
+    return JSON.parse(json) as T;
+  } catch (error) {
+    try {
+      return JSON.parse(repairHardWrappedJsonStringLiterals(json)) as T;
+    } catch {
+      throw error;
+    }
+  }
+}
+
 function normalizeText(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
@@ -144,12 +201,12 @@ function normalizeSteps(rawSteps: unknown, state: RunState): OrchestratorStep[] 
 
 export function parseOrchestratorPlan(raw: string, state: RunState): OrchestratorPlan {
   try {
-    const parsed = JSON.parse(extractJsonObject(raw)) as {
+    const parsed = parseJsonObject<{
       strategy?: unknown;
       reason?: unknown;
       steps?: unknown;
       finalResponder?: unknown;
-    };
+    }>(raw);
     const enabled = new Set(enabledWorkerRoles(state));
     const steps = normalizeSteps(parsed.steps, state);
 
@@ -180,12 +237,12 @@ export function parseOrchestratorPlan(raw: string, state: RunState): Orchestrato
 
 export function parseOrchestratorVerdict(raw: string, state: RunState, candidateAnswer: string): OrchestratorVerdict {
   try {
-    const parsed = JSON.parse(extractJsonObject(raw)) as {
+    const parsed = parseJsonObject<{
       status?: unknown;
       reason?: unknown;
       userAnswer?: unknown;
       nextSteps?: unknown;
-    };
+    }>(raw);
     const status = parsed.status === 'incomplete' ? 'incomplete' : parsed.status === 'complete' ? 'complete' : undefined;
     if (!status) {
       return {

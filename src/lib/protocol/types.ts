@@ -3,7 +3,7 @@ export type RunMode = 'mock' | 'cli';
 export type AgentRole = 'orchestrator' | 'planner' | 'engineer' | 'reviewer';
 export type AgentStatus = 'idle' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed';
 export type AgentAdapterKind = 'mock' | 'codex' | 'tmux-codex';
-export type AgentSessionStatus = 'starting' | 'attached' | 'idle' | 'running' | 'dead';
+export type AgentSessionStatus = 'starting' | 'attached' | 'idle' | 'running' | 'completed' | 'blocked' | 'dead';
 
 export type MessageKind =
   | 'instruction'
@@ -26,7 +26,12 @@ export type EventType =
   | 'session.created'
   | 'session.prompt_injected'
   | 'session.output_captured'
+  | 'session.completed'
+  | 'session.completion_timeout'
   | 'session.restarted'
+  | 'approval.requested'
+  | 'approval.approved'
+  | 'approval.rejected'
   | 'agent.started'
   | 'agent.status_changed'
   | 'message.sent'
@@ -118,6 +123,7 @@ export interface AgentSessionHandle {
   updatedAt: string;
   lastInjectedAt?: string;
   lastCapturedAt?: string;
+  lastCompletedAt?: string;
 }
 
 export interface RunState {

@@ -186,9 +186,29 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
     '```',
   ].join('\n'), state, '후보 답변');
   const fallbackVerdict = parseOrchestratorVerdict('JSON이 아닌 출력', state, '후보 답변');
+  const hardWrappedPlan = parseOrchestratorPlan([
+    '{',
+    '  "strategy": "dynamic-orchestrator",',
+    '  "reason": "현재 사용자 요청은 단순한 인사이며 요구사항 정리나 기술 구현이 필요',
+    '  하지 않으므로 최종 응답만 만들면 됩니다.",',
+    '  "steps": [',
+    '    {',
+    '      "agent": "reviewer",',
+    '      "task": "사용자의 간단한 인사에 자연스럽고 짧게 응답할 최종 답변을 작성한다.",',
+    '      "reason": "요청이 단순하여 Planner나 Engineer의 분석 및 구현 작업이 필요하지',
+    '      않다.",',
+    '      "expectedOutput": "사용자에게 전달할 간단한 인사 응답"',
+    '    }',
+    '  ],',
+    '  "finalResponder": "reviewer"',
+    '}',
+  ].join('\n'), state);
 
   assert.equal(plan.strategy, 'wrapped-json');
   assert.deepEqual(plan.steps.map((step) => step.agent), ['engineer', 'reviewer']);
+  assert.equal(hardWrappedPlan.strategy, 'dynamic-orchestrator');
+  assert.deepEqual(hardWrappedPlan.steps.map((step) => step.agent), ['reviewer']);
+  assert.match(hardWrappedPlan.reason, /기술 구현이 필요 하지 않으므로/);
   assert.equal(verdict.status, 'complete');
   assert.equal(verdict.userAnswer, '최종 답변');
   assert.equal(fallbackVerdict.status, 'complete');

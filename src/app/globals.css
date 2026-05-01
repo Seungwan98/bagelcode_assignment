@@ -510,6 +510,73 @@ pre {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
 }
+.agent-panel-approval {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(253, 230, 138, .34);
+  border-left: 4px solid var(--warning);
+  border-radius: 16px;
+  background: rgba(120, 53, 15, .24);
+  padding: 10px;
+}
+.agent-panel-approval.approved {
+  border-color: rgba(167, 243, 208, .28);
+  border-left-color: var(--accent-2);
+  background: rgba(6, 78, 59, .18);
+}
+.agent-panel-approval.rejected {
+  border-color: rgba(253, 164, 175, .36);
+  border-left-color: var(--danger);
+  background: rgba(127, 29, 29, .24);
+}
+.agent-panel-approval-main {
+  display: grid;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.agent-panel-approval-main span,
+.agent-panel-approval-main small {
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 900;
+}
+.agent-panel-approval-main strong { font-size: .86rem; }
+.agent-panel-approval-main code {
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(253, 230, 138, .24);
+  border-radius: 10px;
+  background: rgba(4, 12, 24, .52);
+  color: #fde68a;
+  padding: 6px 8px;
+  font-size: .75rem;
+}
+.agent-panel-approval-main p {
+  margin: 0;
+  color: var(--text);
+  font-size: .8rem;
+  line-height: 1.4;
+}
+.agent-panel-approval-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-panel-approval-actions button {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0 12px;
+}
+.agent-panel-approval-actions span {
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 800;
+}
 .agent-panel-empty,
 .agent-panel-working {
   border: 1px dashed rgba(148, 163, 184, .22);

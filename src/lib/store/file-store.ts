@@ -454,7 +454,7 @@ export async function updateAgentSessionStatus(
   runId: string,
   role: AgentRole,
   status: AgentSessionStatus,
-  timestamps: Partial<Pick<AgentSessionHandle, 'lastInjectedAt' | 'lastCapturedAt'>> = {},
+  timestamps: Partial<Pick<AgentSessionHandle, 'lastInjectedAt' | 'lastCapturedAt' | 'lastCompletedAt'>> = {},
 ): Promise<AgentSessionHandle | undefined> {
   const state = await readState(runId);
   const existing = state.sessions?.[role];

@@ -26,6 +26,17 @@ interface ProcessLogEntry {
   tone: 'normal' | 'route' | 'error';
 }
 
+interface ApprovalCard {
+  approvalId: string;
+  eventId: string;
+  role: AgentRole;
+  createdAt: string;
+  command: string;
+  reason: string;
+  choices: string[];
+  status: 'pending' | 'approved' | 'rejected';
+}
+
 const CLIENT_SESSION_STORAGE_KEY = 'agentboard:clientSessionId';
 const LEGACY_CLIENT_SESSION_STORAGE_KEYS = ['agentboard.clientSessionId', 'agentboard:client-session-id'];
 const AGENT_PANEL_ORDER: AgentRole[] = ['orchestrator', 'planner', 'engineer', 'reviewer'];
@@ -192,6 +203,45 @@ function stringifyPayload(payload: Record<string, unknown>): string {
   }
 }
 
+function payloadStringArray(event: RunEvent, key: string): string[] {
+  const value = event.payload[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function payloadAgentRole(event: RunEvent): AgentRole | undefined {
+  const role = eventPayloadText(event, 'role');
+  return AGENT_PANEL_ORDER.includes(role as AgentRole) ? role as AgentRole : undefined;
+}
+
+function approvalCardsForAgent(events: RunEvent[], role: AgentRole): ApprovalCard[] {
+  const resolved = new Map<string, 'approved' | 'rejected'>();
+  for (const event of events) {
+    const approvalId = eventPayloadText(event, 'approvalId');
+    if (!approvalId) continue;
+    if (event.type === 'approval.approved') resolved.set(approvalId, 'approved');
+    if (event.type === 'approval.rejected') resolved.set(approvalId, 'rejected');
+  }
+  return events
+    .filter((event) => event.type === 'approval.requested' && payloadAgentRole(event) === role)
+    .map((event) => {
+      const approvalId = eventPayloadText(event, 'approvalId') ?? event.id;
+      return {
+        approvalId,
+        eventId: event.id,
+        role,
+        createdAt: event.createdAt,
+        command: eventPayloadText(event, 'command') ?? '승인이 필요한 명령',
+        reason: eventPayloadText(event, 'reason') ?? 'Codex가 명령 실행 승인을 요청했습니다.',
+        choices: payloadStringArray(event, 'choices'),
+        status: resolved.get(approvalId) ?? 'pending',
+      };
+    });
+}
+
+function pendingApprovals(events: RunEvent[]): ApprovalCard[] {
+  return AGENT_PANEL_ORDER.flatMap((role) => approvalCardsForAgent(events, role)).filter((approval) => approval.status === 'pending');
+}
+
 function logBase(event: RunEvent): Pick<ProcessLogEntry, 'id' | 'createdAt' | 'eventType' | 'actor' | 'payload'> {
   return {
     id: event.id,
@@ -305,6 +355,46 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
       tone: event.type === 'continuation.max_iterations_reached' ? 'error' : 'route',
     };
   }
+  if (event.type === 'approval.requested' || event.type === 'approval.approved' || event.type === 'approval.rejected') {
+    const command = eventPayloadText(event, 'command');
+    const approvalId = eventPayloadText(event, 'approvalId');
+    const action = eventPayloadText(event, 'action');
+    return {
+      ...logBase(event),
+      title: event.type === 'approval.requested'
+        ? `${actorLabel(agentMap, event.actor)} 권한 요청`
+        : `${actorLabel(agentMap, event.actor)} 권한 ${event.type === 'approval.approved' ? '승인' : '거절'}`,
+      detail: [action, command, approvalId].filter(Boolean).join(' · ') || event.type,
+      body: eventPayloadText(event, 'reason') ?? eventPayloadText(event, 'prompt'),
+      route: false,
+      tone: event.type === 'approval.rejected' ? 'error' : 'route',
+    };
+  }
+  if (event.type === 'session.completed') {
+    return {
+      ...logBase(event),
+      title: `${actorLabel(agentMap, event.actor)} 완료 통보`,
+      detail: [
+        eventPayloadText(event, 'markerStatus') ?? 'complete',
+        durationMs ? `${durationMs}ms` : undefined,
+        tmuxSession,
+        tmuxPane,
+      ].filter(Boolean).join(' · ') || event.type,
+      route: false,
+      tone: eventPayloadText(event, 'markerStatus') === 'blocked' ? 'error' : 'normal',
+    };
+  }
+  if (event.type === 'session.completion_timeout') {
+    return {
+      ...logBase(event),
+      title: `${actorLabel(agentMap, event.actor)} 완료 감지 timeout`,
+      detail: [eventPayloadText(event, 'timeoutMs') ? `${eventPayloadText(event, 'timeoutMs')}ms` : undefined, tmuxSession, tmuxPane]
+        .filter(Boolean)
+        .join(' · ') || event.type,
+      route: false,
+      tone: 'error',
+    };
+  }
   if (event.type === 'session.created' || event.type === 'session.prompt_injected' || event.type === 'session.output_captured' || event.type === 'session.restarted') {
     return {
       ...logBase(event),
@@ -368,6 +458,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
   const [connected, setConnected] = useState(false);
   const [body, setBody] = useState('');
   const [controlStatus, setControlStatus] = useState('');
+  const [approvalActionStatus, setApprovalActionStatus] = useState<Record<string, string>>({});
   const restoredUiStateRef = useRef(false);
 
   const agentMap = useMemo(() => new Map(runState.agents.map((agent) => [agent.id, agent])), [runState.agents]);
@@ -388,8 +479,9 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
     () => processLogs.find((log) => log.id === selectedLogId || log.messageId === selectedLogId) ?? null,
     [processLogs, selectedLogId],
   );
+  const pendingApprovalCards = useMemo(() => pendingApprovals(events), [events]);
   const runInProgress = isRunInProgress(runState.run.status);
-  const progressLabel = runProgressLabel(runState, latestEvent);
+  const progressLabel = pendingApprovalCards.length ? '사용자 승인 대기' : runProgressLabel(runState, latestEvent);
   const continuation = runState.continuation;
 
   useEffect(() => {
@@ -498,6 +590,25 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
     onRunUpdated?.();
   }
 
+  async function submitApproval(approval: ApprovalCard, action: 'approve' | 'reject') {
+    setApprovalActionStatus((current) => ({ ...current, [approval.approvalId]: action === 'approve' ? '승인 처리 중...' : '거절 처리 중...' }));
+    const response = await fetch(`/api/runs/${runId}/approvals`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: approval.role, action, approvalId: approval.approvalId }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      setControlStatus(data?.error?.message ?? '권한 요청 처리 실패');
+      setApprovalActionStatus((current) => ({ ...current, [approval.approvalId]: '' }));
+      return;
+    }
+    setControlStatus(action === 'approve' ? '권한 요청을 승인했습니다.' : '권한 요청을 거절했습니다.');
+    setApprovalActionStatus((current) => ({ ...current, [approval.approvalId]: '' }));
+    await refreshSnapshot();
+    onRunUpdated?.();
+  }
+
 
   return (
     <main className={`chat-shell ${variant === 'embedded' ? 'embedded' : ''}`}>
@@ -511,6 +622,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
           <div className="chat-topbar-actions">
             <span className={`badge ${runState.run.status}`}>{runState.run.status}</span>
             {runInProgress ? <span className="badge progress-badge active">{progressLabel}</span> : null}
+            {pendingApprovalCards.length ? <span className="badge progress-badge active">승인 요청 {pendingApprovalCards.length}</span> : null}
             {continuation?.enabled && continuation.iteration > 0 ? (
               <span className="badge continuation-badge">auto-loop {continuation.iteration}/{continuation.maxIterations}</span>
             ) : null}
@@ -627,6 +739,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
             const receivedCount = messages.filter((message) => message.to === agent.id).length;
             const isWorking = agent.status === 'thinking' || agent.status === 'waiting';
             const session = runState.sessions?.[agent.role];
+            const approvalCards = approvalCardsForAgent(events, agent.role).slice(-4);
 
             return (
               <article className={`agent-panel ${agent.role} ${agent.status}`} key={agent.id}>
@@ -676,6 +789,52 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
                 ) : null}
 
                 <div className="agent-panel-feed" aria-label={`${agent.displayName} 메시지`}>
+                  {approvalCards.map((approval) => {
+                    const pending = approval.status === 'pending';
+                    const actionStatus = approvalActionStatus[approval.approvalId];
+                    return (
+                      <article className={`agent-panel-approval ${approval.status}`} key={approval.approvalId}>
+                        <button
+                          className="agent-panel-approval-main"
+                          onClick={() => setSelectedLogId(approval.eventId)}
+                          type="button"
+                        >
+                          <span>{formatTime(approval.createdAt)} · 권한 요청</span>
+                          <strong>{pending ? '사용자 승인이 필요합니다' : approval.status === 'approved' ? '승인됨' : '거절됨'}</strong>
+                          <code>{approval.command}</code>
+                          <p>{approval.reason}</p>
+                          {approval.choices.length ? <small>{approval.choices.join(' · ')}</small> : null}
+                        </button>
+                        {pending ? (
+                          <div className="agent-panel-approval-actions">
+                            <button
+                              disabled={Boolean(actionStatus)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void submitApproval(approval, 'approve');
+                              }}
+                              type="button"
+                            >
+                              승인
+                            </button>
+                            <button
+                              className="danger"
+                              disabled={Boolean(actionStatus)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void submitApproval(approval, 'reject');
+                              }}
+                              type="button"
+                            >
+                              거절
+                            </button>
+                            {actionStatus ? <span>{actionStatus}</span> : null}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+
                   {panelMessages.length ? (
                     panelMessages.map((message) => (
                       <button
@@ -689,7 +848,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
                         <p>{message.body}</p>
                       </button>
                     ))
-                  ) : (
+                  ) : approvalCards.length ? null : (
                     <div className="agent-panel-empty">
                       <strong>아직 메시지가 없습니다.</strong>
                       <p>{agent.role === 'orchestrator' ? '사용자 요청을 받으면 라우팅 결정과 배정 메시지가 여기에 표시됩니다.' : 'Orchestrator가 이 Agent에게 작업을 배정하면 여기에 표시됩니다.'}</p>
