@@ -144,13 +144,14 @@ cat .agentboard/runs/<runId>/state.json
 
 진행 중인 run은 먼저 UI의 `취소` 버튼으로 `stopped` 상태로 만든 뒤 삭제한다. 이미 directory가 없으면 좌측 목록의 새로고침 또는 페이지 새로고침으로 session snapshot을 다시 읽는다.
 
-## Agent Collaboration 타임라인이 비어 있음
+## Agent 패널/Logs에 agent 간 메시지가 보이지 않음
 
 ### 가능한 원인
 
 - 아직 Orchestrator가 Agent에게 업무를 배정하기 전이다.
 - 선택된 run에 agent-to-agent 메시지가 없다.
 - Logs에는 event가 있으나 message payload가 없는 시스템 이벤트만 기록됐다.
+- Agent 패널이 특정 role의 메시지만 필터링하고 있다.
 
 ### 확인
 
@@ -158,7 +159,62 @@ cat .agentboard/runs/<runId>/state.json
 cat .agentboard/runs/<runId>/messages.jsonl
 ```
 
-`from`과 `to`가 모두 agent id인 메시지가 있으면 타임라인에 표시되어야 한다.
+`from`과 `to`가 모두 agent id인 메시지가 있으면 4분할 Agent 채팅 패널 또는 Logs drawer에 표시되어야 한다.
+
+## Orchestrator JSON parse fallback이 발생함
+
+### 증상
+
+```text
+Strategy: fallback-linear-orchestrator
+Reason: Orchestrator 출력 JSON을 파싱하지 못해 기본 순서를 사용합니다.
+Parse Error: orchestrator output does not contain a JSON object
+```
+
+### 가능한 원인
+
+- Orchestrator Agent가 JSON plan 대신 설명 문장만 출력했다.
+- `tmux-codex`가 `AGENTBOARD_DONE` marker를 받기 전의 부분 출력만 capture했다.
+- `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS`가 너무 낮아 스트리밍 중 output을 완료로 오인했다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/events.jsonl | grep -E "session.completed|idle-prompt-fallback|orchestrator"
+cat .agentboard/runs/<runId>/messages.jsonl
+tmux capture-pane -pt <session>:<window>.<pane> -S -200
+```
+
+`session.completed`에 `completionSource: "idle-prompt-fallback"`이 있고 직후 실제 pane에는 JSON과 `AGENTBOARD_DONE`이 보이면 fallback이 너무 빨리 적용된 것이다.
+
+### 해결
+
+- dev server를 재시작해 최신 adapter 코드를 반영한다.
+- `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS=30000` 이상으로 둔다.
+- Orchestrator prompt는 JSON object 하나를 출력하도록 유지한다.
+- 같은 문제가 반복되면 해당 run의 `events.jsonl`, `messages.jsonl`, tmux pane capture를 함께 비교한다.
+
+## tmux-codex 권한 요청에서 멈춘 것처럼 보임
+
+### 가능한 원인
+
+- Codex가 command 실행 권한을 요청했지만 Web UI에서 승인/거절하지 않았다.
+- 브라우저가 SSE를 놓쳐 `approval.requested` 카드가 보이지 않는다.
+- 승인 API 호출은 성공했지만 tmux pane 주입이 실패했다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/events.jsonl | grep approval
+cat .agentboard/runs/<runId>/state.json
+```
+
+### 해결
+
+- 해당 Agent 채팅 패널의 승인/거절 카드를 누른다.
+- 카드가 보이지 않으면 페이지를 새로고침하고 Logs drawer에서 `approval.requested` event를 확인한다.
+- 수동 확인이 필요하면 tmux pane에서 Codex 권한 prompt가 떠 있는지 본다.
+- API로 처리하려면 `POST /api/runs/<runId>/approvals`에 `approvalId`, `decision` 값을 보낸다.
 
 ## 실행 중이던 run이 stale로 표시됨
 
@@ -262,6 +318,27 @@ git check-ignore .env.local config/firebase.local.json .agentboard/runs/example/
 
 ```bash
 git restore --staged .env.local config/firebase.local.json .agentboard
+```
+
+## `DerivedData` 또는 `Index.noindex`가 Git에 잡힘
+
+### 의미
+
+`TaskFlowMVVM/DerivedData`, `Index.noindex`, `xcuserdata`는 Xcode/Swift 빌드와 indexing 과정에서 생기는 로컬 생성물이다. AgentBoard 코드나 문서 산출물이 아니므로 commit하지 않는다.
+
+### 확인
+
+```bash
+git status --short --ignored | grep -E "DerivedData|noindex|xcuserdata"
+git check-ignore TaskFlowMVVM/DerivedData TaskFlowMVVM/DerivedData/Index.noindex
+```
+
+### 해결
+
+`.gitignore`가 최신이면 ignored로 보여야 한다. 필요하면 로컬 cache를 삭제한다.
+
+```bash
+rm -rf TaskFlowMVVM/DerivedData TaskFlowMVVM/Derived
 ```
 
 ## 문서와 구현이 어긋남

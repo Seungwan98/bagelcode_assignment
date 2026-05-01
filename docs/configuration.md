@@ -139,6 +139,7 @@ AGENTBOARD_CLI_TIMEOUT_MS=120000
 | 값 | 설명 |
 | --- | --- |
 | `codex` | `AGENTBOARD_CODEX_CMD`로 실행 |
+| `tmux-codex` | role별 persistent tmux session에 Codex를 띄우고 AgentBoard 완료 marker를 감지할 때까지 대기 |
 
 prompt 전달 방식:
 
@@ -158,6 +159,58 @@ AGENTBOARD_CODEX_PROMPT_MODE=append-arg
 ```bash
 AGENTBOARD_CODEX_CMD="codex exec"
 ```
+
+## tmux Codex session config
+
+긴 작업을 수행하는 실제 Codex 실행은 role별 adapter를 `tmux-codex`로 설정하는 것을 권장한다. 이 모드에서는 AgentBoard가 prompt에 transport 완료 marker 규칙을 추가하고, tmux pane을 polling하여 `AGENTBOARD_DONE` marker가 보일 때 `session.completed` 이벤트를 기록한다. Codex가 `AGENTBOARD_BEGIN` 이후 답변을 끝냈지만 `AGENTBOARD_DONE`을 누락한 채 idle prompt(`›`)로 돌아온 경우에는 같은 출력이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지된 뒤에만 `completionSource=idle-prompt-fallback`으로 완료 처리한다.
+
+```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex
+AGENTBOARD_PLANNER_ADAPTER=tmux-codex
+AGENTBOARD_ENGINEER_ADAPTER=tmux-codex
+AGENTBOARD_REVIEWER_ADAPTER=tmux-codex
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen"
+AGENTBOARD_TMUX_CMD=tmux
+AGENTBOARD_TMUX_ALLOWLIST=tmux
+AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS=600000
+AGENTBOARD_TMUX_COMPLETION_POLL_MS=1000
+AGENTBOARD_TMUX_READY_TIMEOUT_MS=20000
+AGENTBOARD_TMUX_READY_POLL_MS=250
+AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS=2000
+AGENTBOARD_TMUX_SUBMIT_DELAY_MS=1000
+AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS=30000
+AGENTBOARD_TMUX_CAPTURE_HISTORY_LINES=1000
+```
+
+tmux 관련 값:
+
+| 값 | 기본값 | 설명 |
+| --- | --- | --- |
+| `AGENTBOARD_TMUX_CMD` | `tmux` | 실행할 tmux command |
+| `AGENTBOARD_TMUX_ALLOWLIST` | `tmux` | 허용할 tmux executable 이름 |
+| `AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS` | `600000` | 완료 marker를 기다릴 최대 시간 |
+| `AGENTBOARD_TMUX_COMPLETION_POLL_MS` | `1000` | `capture-pane` polling 간격 |
+| `AGENTBOARD_TMUX_READY_TIMEOUT_MS` | `20000` | Codex TUI가 prompt를 받을 준비가 될 때까지 기다릴 최대 시간 |
+| `AGENTBOARD_TMUX_READY_POLL_MS` | `250` | Codex TUI ready check polling 간격 |
+| `AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS` | `2000` | prompt paste가 Codex 입력창에 반영될 때까지 기다릴 최대 시간 |
+| `AGENTBOARD_TMUX_SUBMIT_DELAY_MS` | `1000` | prompt paste 후 Enter submit 전 대기 시간. 긴 paste가 `[Pasted Content ...]`로 접히는 동안 Enter가 너무 빨리 들어가면 input line에 머물 수 있으므로 기본값은 1초다. |
+| `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` | `30000` | `AGENTBOARD_DONE`이 누락된 경우 idle prompt 기반 fallback을 적용하기 전 동일 출력이 안정적으로 유지되어야 하는 시간. 스트리밍 중 부분 출력이 JSON parse fallback으로 오인되는 것을 막는다. |
+| `AGENTBOARD_TMUX_CAPTURE_HISTORY_LINES` | `400` | 완료 marker 탐색에 사용할 pane history line 수 |
+| `AGENTBOARD_TMUX_CAPTURE_DELAY_MS` | `1000` | prompt 주입 직후 첫 capture 전 대기 시간 |
+
+완료 통보 기준:
+
+- 정상 완료: `session.completed` event와 session status `completed`
+- 추가 입력/진행 불가: `session.completed` event의 `markerStatus=blocked`, session status `blocked`
+- timeout: `session.completion_timeout` event와 session status `blocked`
+- 긴 prompt 주입: AgentBoard는 prompt를 `.agentboard/runs/<runId>/tmux-prompts/` 임시 파일로 저장한 뒤 `tmux load-buffer`로 주입하고 즉시 삭제한다. `session.prompt_injected` event의 `promptTransport` 값은 `tmux-load-buffer-file`이다.
+- DONE marker 누락 fallback: `AGENTBOARD_BEGIN` 이후 유효한 output이 있고 Codex가 idle prompt로 돌아오면, 같은 출력이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지된 뒤 `session.completed` event에 `completionSource=idle-prompt-fallback`을 기록한다.
+- 권한 요청: Codex가 `Would you like to run the following command?` 프롬프트에서 대기하면 `approval.requested` event를 기록하고 해당 Agent 채팅창에 승인/거절 카드를 표시한다. 승인/거절은 `POST /api/runs/<runId>/approvals`를 통해 tmux pane에 `Enter` 또는 `Escape`를 주입한다.
+
+주의:
+
+- `tmux-codex`는 persistent pane에 prompt를 계속 주입하므로 `codex exec`보다 interactive `codex --no-alt-screen`을 권장한다.
+- `codex exec`는 one-shot 실행용이라 tmux pane 안에서 완료 marker를 안정적으로 기다리는 구조와 맞지 않는다.
 
 보안 규칙:
 

@@ -17,6 +17,16 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 
+# Xcode / Swift generated artifacts
+DerivedData/
+**/DerivedData/
+**/Derived/
+*.noindex/
+**/*.noindex/
+xcuserdata/
+**/xcuserdata/
+*.xcuserstate
+
 # Runtime state and logs
 .agentboard/
 logs/

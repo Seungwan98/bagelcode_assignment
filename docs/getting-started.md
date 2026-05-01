@@ -46,13 +46,13 @@ http://localhost:3000
 3. 실행 모드는 `mock`을 선택한다.
 4. `전송` 버튼을 누른다.
 5. 새 run이 좌측 세션 목록에 추가되고 중앙 채팅 영역에서 선택되는지 확인한다.
-6. `Agent Collaboration` 타임라인과 `Logs` 버튼에서 다음 흐름을 확인하고, 항목을 눌러 전체 payload를 팝업으로 확인한다.
+6. 4분할 Agent 채팅 패널과 `Logs` 버튼에서 다음 흐름을 확인하고, log 항목을 눌러 전체 payload를 팝업으로 확인한다.
    - `run.started`
    - `orchestrator -> agent` 업무 배정 메시지
    - 필요한 경우 `planner -> engineer` 또는 `engineer -> reviewer` handoff 메시지
    - `reviewer -> orchestrator` 검토 메시지
    - `artifact.updated`
-7. 상단 agent rail에서 agent를 눌러 현재 상태, 최근 메시지, 최근 이벤트를 확인한다.
+7. Orchestrator/Planner/Engineer/Reviewer 패널에서 각 Agent의 상태, 최근 메시지, 최근 이벤트를 확인한다.
 8. 답변 생성 중 하단 입력창이 잠기고 현재 작업 indicator와 `취소` 버튼이 보이는지 확인한다.
 9. 답변이 완료되면 같은 입력창에 다음 질문을 보내 Reviewer → User 답변이 추가되는지 확인한다.
 10. 취소 테스트가 필요하면 `취소`를 눌러 status가 `stopped`로 바뀌는지 확인한다.
@@ -120,9 +120,10 @@ Mock mode에서는 Firebase 설정이 없어도 된다.
 
 처음 실행한 사람이 아래를 확인하면 성공이다.
 
-- 채팅 상단 agent rail에서 2개 이상의 agent가 보인다.
-- Agent를 클릭하면 해당 agent의 현재 상태와 최근 활동이 보인다.
-- Agent 간 메시지 전달 과정이 Agent Collaboration 타임라인과 Logs drawer에 표시된다.
+- 4분할 Agent 채팅 패널에서 2개 이상의 agent가 보인다.
+- 각 Agent 패널에서 현재 상태, 최근 활동, session 상태가 보인다.
+- Agent 간 메시지 전달 과정이 각 Agent 패널과 Logs drawer에 표시된다.
+- `tmux-codex` 권한 요청이 발생하면 해당 Agent 패널에 승인/거절 카드가 표시된다.
 - 완료/중단된 대화를 좌측 세션 목록에서 삭제할 수 있다.
 - 답변 생성 중에는 추가 전송이 잠기고 취소 버튼이 보인다.
 - 답변 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.

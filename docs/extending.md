@@ -122,19 +122,13 @@ Agent 간 메시지를 graph로 보여주는 기능.
 
 ### Approval gate
 
-사용자가 특정 단계에서 승인해야 다음 agent가 진행하는 기능.
+`tmux-codex`는 Codex 권한 프롬프트를 감지하면 `approval.requested` event를 기록하고, ChatRoom의 해당 Agent 채팅창에 승인/거절 카드를 표시한다. UI는 `POST /api/runs/<runId>/approvals`로 승인 상태를 전달하고, adapter가 tmux pane에 `Enter` 또는 `Escape`를 주입한다.
 
-추가 개념:
+확장 시 유지할 규칙:
 
-- `approval.requested` event
-- `approval.approved` event
-- `approval.rejected` event
-- pending approval state
-
-주의:
-
-- approval도 user intervention의 특수 형태로 볼 수 있다.
-- 승인 대기 중 run status를 명확히 표시한다.
+- 승인 요청은 `approvalId`로 dedupe/resolution을 연결한다.
+- 승인 대기 중 Agent status는 `waiting`으로 보여준다.
+- 자동 승인은 별도 allowlist 정책이 생기기 전까지 추가하지 않는다.
 
 ## 새 API route 추가
 

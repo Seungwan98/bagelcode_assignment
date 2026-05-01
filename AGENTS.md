@@ -34,6 +34,7 @@ Primary proof points:
 - Use a small adapter boundary for agents:
   - `MockAgentAdapter` for deterministic README demo.
   - `CliAgentAdapter` for optional local `codex` execution. In CLI mode, Planner/Engineer/Reviewer all use Codex unless a future adapter is explicitly added.
+  - `TmuxSessionAdapter` for optional persistent Codex sessions. It must require AgentBoard transport markers, wait for a stable idle fallback before accepting missing `AGENTBOARD_DONE`, and surface Codex permission prompts as UI approval events.
   - Future Firebase/Cloud adapters must not break mock mode.
 - User interventions are first-class messages from `user` to an agent or `all`.
 - Final artifacts must reference the run, participating agents, major messages, and any user intervention.
@@ -66,7 +67,7 @@ This repository may start without git initialized. Commit rules are summarized i
 Minimum commit hygiene:
 
 1. Inspect changes before committing: `git status --short && git diff --check`.
-2. Do not commit generated run state, Firebase local config, service accounts, `.env.local`, or build artifacts.
+2. Do not commit generated run state, Firebase local config, service accounts, `.env.local`, build artifacts, Xcode `DerivedData`/`.noindex` caches, or `xcuserdata`.
 3. Keep commits small and evidence-focused.
 4. Use Korean-first commit messages with one English type tag, e.g. `[Feat] 첫 번째 커밋`.
 5. Use English only for the tag, commands, file paths, package names, and unavoidable technical identifiers.
@@ -78,5 +79,5 @@ Before reporting completion, verify:
 - Required docs exist.
 - Firebase local config paths are ignored.
 - Templates do not contain real secrets.
-- `.gitignore` covers generated run state, build output, dependency folders, and secret files.
+- `.gitignore` covers generated run state, build output, dependency folders, secret files, and Xcode/Swift generated artifacts.
 - Any implementation later added can be run from README in mock mode.

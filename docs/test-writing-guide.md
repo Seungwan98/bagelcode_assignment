@@ -34,6 +34,7 @@ AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, 
 - Client session store가 active/recent run을 기록하고 stale run을 안전하게 표시하는지
 - Delete API가 완료/중단 run을 삭제하고 client session index에서 제거하는지
 - Agent Session Runtime이 Orchestrator plan, prompt builder, message bus를 사용하는지
+- `tmux-codex` adapter가 DONE marker, stable idle fallback, permission approval event를 올바르게 처리하는지
 
 ### E2E or smoke test
 
@@ -60,10 +61,11 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 6. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
 7. Control stop API와 runner cancellation test
 8. CLI adapter command parsing / fake CLI integration test
-9. Session persistence store/API test
-10. Chat UI state persistence smoke test
-11. Run delete store/API test
-12. Firebase adapter test는 optional
+9. `tmux-codex` delayed DONE / idle fallback / approval approve-reject regression test
+10. Session persistence store/API test
+11. Chat UI state persistence smoke test
+12. Run delete store/API test
+13. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -160,7 +162,9 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] 완료/중단된 run 삭제 가능
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
-- [ ] Agent Collaboration 타임라인에서 agent-agent message 확인 가능
+- [ ] 4분할 Agent 채팅 패널에서 agent-agent message 확인 가능
+- [ ] Logs drawer에서 handoff/raw event 확인 가능
+- [ ] `tmux-codex` 권한 요청 카드 승인/거절 가능
 - [ ] 진행 중 composer가 잠기고 취소 버튼 표시
 - [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
@@ -169,10 +173,11 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, draft 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨
+- [ ] Xcode/Swift `DerivedData`, `.noindex`, `xcuserdata`가 gitignore됨
 
 ## 테스트 명령 예시
 
-프로젝트 스크립트가 생기면 아래 명령을 기준으로 맞춘다.
+프로젝트 스크립트가 생기면 아래 명령을 기준으로 맞춘다. 현재 `npm test`는 tmux 전역 mock 충돌을 피하기 위해 Node test runner를 `--test-concurrency=1`로 직렬 실행한다.
 
 ```bash
 npm run typecheck
