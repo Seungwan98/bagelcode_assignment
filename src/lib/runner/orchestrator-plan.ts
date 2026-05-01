@@ -28,6 +28,15 @@ export interface OrchestratorVerdict {
   parseError?: string;
 }
 
+export interface OrchestratorInterventionDecision {
+  action: 'continue' | 'restart' | 'ask_user';
+  reason: string;
+  instruction?: string;
+  question?: string;
+  fallback?: boolean;
+  parseError?: string;
+}
+
 const WORKER_ROLES: WorkerAgentRole[] = ['planner', 'engineer', 'reviewer'];
 
 function isWorkerRole(value: unknown): value is WorkerAgentRole {
@@ -291,6 +300,55 @@ export function parseOrchestratorVerdict(raw: string, state: RunState, candidate
   }
 }
 
+export function parseOrchestratorInterventionDecision(
+  raw: string,
+  pendingInterventions: { body: string }[],
+): OrchestratorInterventionDecision {
+  const fallbackInstruction = pendingInterventions.map((message) => message.body).join('\n');
+  try {
+    const parsed = parseJsonObject<{
+      action?: unknown;
+      reason?: unknown;
+      instruction?: unknown;
+      question?: unknown;
+    }>(raw);
+    const action = parsed.action === 'restart' || parsed.action === 'ask_user' || parsed.action === 'continue'
+      ? parsed.action
+      : undefined;
+    if (!action) {
+      return {
+        action: 'continue',
+        reason: 'Orchestrator 개입 판단 action을 해석하지 못해 현재 flow에 추가 조건으로 반영합니다.',
+        instruction: fallbackInstruction,
+        fallback: true,
+        parseError: 'missing action',
+      };
+    }
+
+    const reason = normalizeText(parsed.reason, 'Orchestrator가 진행 중 사용자 개입 처리 방식을 판단했습니다.');
+    if (action === 'ask_user') {
+      return {
+        action,
+        reason,
+        question: normalizeText(parsed.question, '현재 작업을 중단할지, 기존 결과에 추가 조건으로 반영할지 알려주세요.'),
+      };
+    }
+    return {
+      action,
+      reason,
+      instruction: normalizeText(parsed.instruction, fallbackInstruction),
+    };
+  } catch (error) {
+    return {
+      action: 'continue',
+      reason: 'Orchestrator 개입 판단 JSON을 파싱하지 못해 현재 flow에 추가 조건으로 반영합니다.',
+      instruction: fallbackInstruction,
+      fallback: true,
+      parseError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export function orchestratorPlanFromVerdict(
   verdict: OrchestratorVerdict,
   state: RunState,
@@ -333,6 +391,25 @@ export function formatOrchestratorVerdict(verdict: OrchestratorVerdict, iteratio
     '',
     'Next Steps:',
     nextSteps,
+  ].filter((line): line is string => line !== undefined).join('\n');
+}
+
+export function formatOrchestratorInterventionDecision(
+  decision: OrchestratorInterventionDecision,
+  pendingInterventions: { body: string }[],
+): string {
+  const interventions = pendingInterventions.map((message, index) => `${index + 1}. ${message.body}`).join('\n');
+  return [
+    `Orchestrator Intervention Decision: ${decision.action}`,
+    `Reason: ${decision.reason}`,
+    decision.fallback ? 'Fallback: true' : 'Fallback: false',
+    decision.parseError ? `Parse Error: ${decision.parseError}` : undefined,
+    '',
+    'Pending User Interventions:',
+    interventions || '없음',
+    '',
+    decision.question ? `Question: ${decision.question}` : undefined,
+    decision.instruction ? `Instruction: ${decision.instruction}` : undefined,
   ].filter((line): line is string => line !== undefined).join('\n');
 }
 

@@ -8,7 +8,7 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이
 
 1. 두 개 이상의 에이전트가 구조화된 메시지를 주고받는다.
 2. 사용자는 Chat UI에서 에이전트 상태, 메시지, 산출물을 실시간으로 관찰한다.
-3. 사용자는 답변 생성 중에는 진행 상태를 확인하거나 취소하고, 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.
+3. 사용자는 답변 생성 중에도 추가 지시를 보내고, Orchestrator가 이를 현재 flow에 반영할지 판단한다.
 
 ## 전체 흐름
 
@@ -22,7 +22,7 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이
       ├─ 각 Agent 패널에서 권한 요청 승인/거절
       ├─ Logs drawer로 agent handoff와 raw event 관찰
       ├─ 좌측 session 목록에서 완료/중단 run 삭제
-      ├─ 답변 생성 중 composer 잠금과 취소 버튼
+      ├─ 답변 생성 중 개입 입력과 취소 버튼
       └─ 보고서 drawer 확인
 
 Next.js App
@@ -85,6 +85,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - Run 상태 조회
 - SSE event stream 제공
 - 사용자 요청 메시지 기록 및 새 답변 turn 시작
+- 진행 중 사용자 개입을 queue로 저장하고 Orchestrator 판단 checkpoint에 노출
 - pause/resume/stop 같은 제어 명령 전달. UI 취소는 `stop` 사용
 
 ### Runner Process
@@ -97,8 +98,10 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - Agent manager 생성
 - Agent definition 조회
 - 최신 사용자 요청 turn 식별
+- 실행 중 새로 들어온 사용자 개입 식별
 - `messages.jsonl` 기반 visible conversation과 agent handoff context 구성
 - Orchestrator Agent가 이번 turn의 실행 계획 JSON 생성
+- Agent step 사이 checkpoint에서 Orchestrator가 개입을 `continue`, `restart`, `ask_user` 중 하나로 판단
 - Agent별 prompt 조립과 adapter 호출
 - Agent 간 메시지 라우팅
 - 완료/중단 run 삭제 시 local state와 client session index 정리
@@ -156,7 +159,8 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 - 메시지는 append-only로 저장한다.
 - `messages.jsonl`이 메시지 이력의 기준이다.
 - 각 recipient inbox는 라우팅과 디버깅을 위한 파생 로그다.
-- 사용자 요청은 `from: "user"`, `kind: "user_intervention"` 메시지로 저장하고, 답변 생성 중에는 중복 전송을 막는다.
+- 사용자 요청은 `from: "user"`, `kind: "user_intervention"` 메시지로 저장한다.
+- 답변 생성 중 사용자 요청도 `user_intervention`으로 저장하며, 즉시 새 runner를 띄우지 않고 현재 runner의 Orchestrator checkpoint에서 처리한다.
 
 ### Agent Adapters
 
@@ -225,8 +229,19 @@ User request -> Agent Session Runtime -> Orchestrator -> Message Bus assignments
 3. Runtime이 Orchestrator plan을 파싱하고, 각 step을 `orchestrator -> agent` `instruction` 메시지로 저장한다.
 4. Prompt Builder가 Agent별 system prompt, 최신 사용자 요청, visible conversation, handoff context, Orchestrator assignment를 조립한다.
 5. 선택된 Agent들이 plan 순서대로 실행되고 필요한 경우 다음 Agent에게 handoff 메시지를 남긴다.
-6. 최종 응답 Agent 출력은 `finalResponder -> orchestrator` `review` 로그와 `finalResponder -> user` `result` 답변으로 저장된다.
-7. Runner가 `artifacts/final-report.md`를 갱신한다.
+6. Agent step이 끝날 때 새 사용자 개입이 있으면 Orchestrator가 `continue`, `restart`, `ask_user` 중 하나를 결정한다.
+7. 최종 응답 Agent 출력은 `finalResponder -> orchestrator` `review` 로그와 `finalResponder -> user` `result` 답변으로 저장된다.
+8. Runner가 `artifacts/final-report.md`를 갱신한다.
+
+### 2-1. 진행 중 사용자 개입
+
+```text
+Browser -> POST /api/runs/<runId>/interventions -> user_intervention 저장 -> 현재 Agent step 완료 -> Orchestrator decision -> continue/restart/ask_user
+```
+
+- `continue`: 현재 flow를 유지하고 다음 Agent prompt에 추가 지시를 전달한다.
+- `restart`: 같은 run 안에서 기존 partial log를 남기고 Orchestrator plan을 다시 만든다.
+- `ask_user`: run을 `paused`로 바꾸고 Orchestrator가 사용자에게 확인 질문을 보낸다. 사용자가 답하면 같은 API가 run을 다시 `running`으로 바꾸고 runner를 재시작한다.
 
 ### 3. 사용자 요청 turn
 
@@ -237,7 +252,7 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 1. 사용자가 ChatRoom composer에서 다음 요청을 보낸다.
 2. API가 `user_intervention` 메시지를 저장하고 run status를 `running`으로 바꾼다.
 3. Runner가 Orchestrator plan에 따라 필요한 Agent만 실행한 뒤 Final Responder → User 답변 메시지를 생성한다.
-4. 답변 생성 중에는 composer를 disabled 처리하고 현재 작업 indicator와 `취소` 버튼을 보여준다.
+4. 답변 생성 중에도 composer는 활성화되어 `개입 보내기`와 `현재 작업 취소` 버튼을 보여준다.
 5. 사용자가 `취소`를 누르면 control API가 runner를 정지하고 run status를 `stopped`로 바꾼다. 완료 또는 중단 뒤에는 같은 composer에서 다음 요청을 다시 보낼 수 있다.
 
 ## Event log 기준
@@ -252,6 +267,8 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 - `agent.status_changed`
 - `message.sent`
 - `message.delivered`
+- `user.intervention_queued`
+- `intervention.decision_made`
 - `session.created`
 - `session.prompt_injected`
 - `session.output_captured`

@@ -23,6 +23,8 @@ export type EventType =
   | 'run.stale'
   | 'continuation.injected'
   | 'continuation.max_iterations_reached'
+  | 'user.intervention_queued'
+  | 'intervention.decision_made'
   | 'session.created'
   | 'session.prompt_injected'
   | 'session.output_captured'

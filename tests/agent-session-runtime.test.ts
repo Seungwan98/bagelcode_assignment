@@ -8,7 +8,7 @@ import { getAgentDefinition } from '../src/lib/runner/agent-definitions';
 import { buildAgentPrompt, createAgentExecutionContext, runAgentConversation } from '../src/lib/runner/agent-session-runtime';
 import { parseOrchestratorPlan, parseOrchestratorVerdict } from '../src/lib/runner/orchestrator-plan';
 import { createLinearOrchestratorStrategy } from '../src/lib/runner/orchestrator-strategy';
-import { createRun, readMessages } from '../src/lib/store/file-store';
+import { createRun, readEvents, readMessages, readState } from '../src/lib/store/file-store';
 
 async function withStateDir<T>(fn: () => Promise<T>): Promise<T> {
   const previous = process.env.AGENTBOARD_STATE_DIR;
@@ -159,6 +159,170 @@ test('agent conversation runtime loops when orchestrator verdict is incomplete',
     if (previousMax === undefined) delete process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS;
     else process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS = previousMax;
   }
+}));
+
+test('agent conversation runtime lets orchestrator continue with a running user intervention', async () => withStateDir(async () => {
+  const state = await createRun({ title: 'runtime intervention', brief: '기본 답변을 만들어줘', mode: 'mock' });
+  await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '기본 답변을 만들어줘' });
+
+  const result = await runAgentConversation({
+    state,
+    messages: await readMessages(state.run.id),
+    invokeAgent: async ({ definition, context }) => {
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'plan') {
+        return JSON.stringify({
+          strategy: 'engineer-reviewer',
+          reason: 'Engineer와 Reviewer가 필요합니다.',
+          steps: [
+            { agent: 'engineer', task: '초안을 만든다.', reason: '기술 초안 필요', expectedOutput: '초안' },
+            { agent: 'reviewer', task: '최종 답변을 작성한다.', reason: '사용자 답변 필요', expectedOutput: '최종 답변' },
+          ],
+          finalResponder: 'reviewer',
+        });
+      }
+      if (definition.id === 'engineer') {
+        await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '모바일 조건도 추가해줘' });
+        return 'engineer output';
+      }
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'intervention') {
+        assert.equal(context.pendingInterventions?.at(-1)?.body, '모바일 조건도 추가해줘');
+        return JSON.stringify({
+          action: 'continue',
+          reason: '추가 조건으로 반영하면 충분합니다.',
+          instruction: '모바일 조건을 최종 답변에 포함한다.',
+        });
+      }
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'verify') {
+        return JSON.stringify({
+          status: 'complete',
+          reason: '개입이 반영되었습니다.',
+          userAnswer: context.candidateAnswer,
+          nextSteps: [],
+        });
+      }
+      if (definition.id === 'reviewer') {
+        return context.handoffMessages.some((message) => /모바일 조건을 최종 답변에 포함/.test(message.body))
+          ? '모바일 조건을 반영한 최종 답변'
+          : '개입 누락 답변';
+      }
+      return `${definition.id} output`;
+    },
+  });
+
+  const [messages, events] = await Promise.all([readMessages(state.run.id), readEvents(state.run.id)]);
+  assert.equal(result.stopped, false);
+  assert.equal(result.userAnswer, '모바일 조건을 반영한 최종 답변');
+  assert.ok(events.some((event) => event.type === 'intervention.decision_made' && event.payload.action === 'continue'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'reviewer' && /Orchestrator Intervention Decision: continue/.test(message.body)));
+}));
+
+test('agent conversation runtime pauses and asks user when intervention intent is ambiguous', async () => withStateDir(async () => {
+  const state = await createRun({ title: 'runtime ask user', brief: '답변을 만들어줘', mode: 'mock' });
+  await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '답변을 만들어줘' });
+
+  const result = await runAgentConversation({
+    state,
+    messages: await readMessages(state.run.id),
+    invokeAgent: async ({ definition, context }) => {
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'plan') {
+        return JSON.stringify({
+          strategy: 'reviewer-only',
+          reason: 'Reviewer 답변이면 충분합니다.',
+          steps: [
+            { agent: 'reviewer', task: '답변을 작성한다.', reason: '최종 답변 필요', expectedOutput: '답변' },
+          ],
+          finalResponder: 'reviewer',
+        });
+      }
+      if (definition.id === 'reviewer') {
+        await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '다른 방향도 봐줘' });
+        return '기존 방향 답변';
+      }
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'intervention') {
+        return JSON.stringify({
+          action: 'ask_user',
+          reason: '다른 방향의 의미가 모호합니다.',
+          question: '현재 작업을 중단할까요, 아니면 대안 비교를 추가할까요?',
+        });
+      }
+      return JSON.stringify({ status: 'complete', reason: 'unused', userAnswer: 'unused', nextSteps: [] });
+    },
+  });
+
+  const [pausedState, messages, events] = await Promise.all([
+    readState(state.run.id),
+    readMessages(state.run.id),
+    readEvents(state.run.id),
+  ]);
+  assert.equal(result.stopped, true);
+  assert.equal(pausedState.run.status, 'paused');
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'user' && message.kind === 'question'));
+  assert.ok(events.some((event) => event.type === 'intervention.decision_made' && event.payload.action === 'ask_user'));
+}));
+
+test('agent conversation runtime replans when orchestrator restarts after intervention', async () => withStateDir(async () => {
+  const state = await createRun({ title: 'runtime restart', brief: '간단히 답해줘', mode: 'mock' });
+  await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '간단히 답해줘' });
+  let planCount = 0;
+
+  const result = await runAgentConversation({
+    state,
+    messages: await readMessages(state.run.id),
+    invokeAgent: async ({ definition, context }) => {
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'plan') {
+        planCount += 1;
+        if (planCount === 1) {
+          return JSON.stringify({
+            strategy: 'reviewer-only',
+            reason: '처음에는 단순 답변으로 판단했습니다.',
+            steps: [
+              { agent: 'reviewer', task: '짧게 답한다.', reason: '단순 요청', expectedOutput: '짧은 답변' },
+            ],
+            finalResponder: 'reviewer',
+          });
+        }
+        assert.equal(context.userRequest, '구현 관점으로 다시 계획한다.');
+        return JSON.stringify({
+          strategy: 'restart-with-engineer',
+          reason: '개입으로 구현 관점이 필요해졌습니다.',
+          steps: [
+            { agent: 'engineer', task: '구현 관점을 정리한다.', reason: '기술 검토 필요', expectedOutput: '구현 관점' },
+            { agent: 'reviewer', task: '최종 답변을 작성한다.', reason: '최종 답변 필요', expectedOutput: '답변' },
+          ],
+          finalResponder: 'reviewer',
+        });
+      }
+      if (definition.id === 'reviewer' && planCount === 1) {
+        await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '처음부터 구현 관점으로 다시 해줘' });
+        return '짧은 답변';
+      }
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'intervention') {
+        return JSON.stringify({
+          action: 'restart',
+          reason: '현재 방향과 충돌합니다.',
+          instruction: '구현 관점으로 다시 계획한다.',
+        });
+      }
+      if (definition.id === 'engineer') return '구현 관점';
+      if (definition.id === 'reviewer') return '구현 관점 최종 답변';
+      if (definition.id === 'orchestrator' && context.orchestratorTask === 'verify') {
+        return JSON.stringify({
+          status: 'complete',
+          reason: '재시작된 답변이 목적을 충족합니다.',
+          userAnswer: context.candidateAnswer,
+          nextSteps: [],
+        });
+      }
+      return `${definition.id} output`;
+    },
+  });
+
+  const events = await readEvents(state.run.id);
+  assert.equal(result.stopped, false);
+  assert.equal(planCount, 2);
+  assert.deepEqual(result.orchestratorPlan.steps.map((step) => step.agent), ['engineer', 'reviewer']);
+  assert.equal(result.userAnswer, '구현 관점 최종 답변');
+  assert.ok(events.some((event) => event.type === 'intervention.decision_made' && event.payload.action === 'restart'));
 }));
 
 test('orchestrator parsers tolerate wrapped JSON and expose fallback parse errors', async () => withStateDir(async () => {

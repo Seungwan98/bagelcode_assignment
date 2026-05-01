@@ -69,6 +69,29 @@ cat .agentboard/runs/<runId>/state.json
 
 사용자 요청은 `from: "user"`, 답변은 `from: "reviewer"`, `to: "user"` 메시지로 남아야 한다.
 
+## 진행 중 보낸 개입이 반영되지 않음
+
+### 가능한 원인
+
+- 현재 Agent step이 아직 끝나지 않아 Orchestrator checkpoint에 도달하지 않았다.
+- Orchestrator가 `ask_user`로 판단해 run이 `paused` 상태가 됐다.
+- 개입 메시지는 저장됐지만 runner가 중단되어 stale 상태가 됐다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/messages.jsonl | grep user_intervention
+cat .agentboard/runs/<runId>/events.jsonl | grep -E "user.intervention_queued|intervention.decision_made"
+cat .agentboard/runs/<runId>/state.json
+```
+
+### 해결
+
+- Logs drawer에서 `intervention.decision_made`의 `action`을 확인한다.
+- `continue`면 다음 Agent 결과나 최종 답변에 추가 조건이 반영됐는지 본다.
+- `restart`면 같은 run 안에서 Orchestrator plan이 다시 생성됐는지 본다.
+- `ask_user`면 Orchestrator 질문에 답해 paused run을 다시 진행시킨다.
+
 ## 진행 중 취소가 반영되지 않음
 
 ### 가능한 원인

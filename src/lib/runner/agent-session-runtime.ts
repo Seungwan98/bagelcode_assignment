@@ -3,17 +3,22 @@ import { createAgentManagers, type AgentManagers } from '@/lib/runner/agent-mana
 import type { AgentDefinition } from '@/lib/runner/agent-definitions';
 import type { AgentPromptContext } from '@/lib/runner/agent-prompt-builder';
 import {
+  formatOrchestratorInterventionDecision,
   formatOrchestratorAssignment,
   formatOrchestratorPlanSummary,
   formatOrchestratorVerdict,
   orchestratorPlanFromVerdict,
   orchestratorPlanFromRoles,
+  parseOrchestratorInterventionDecision,
   parseOrchestratorPlan,
   parseOrchestratorVerdict,
+  type OrchestratorInterventionDecision,
   type OrchestratorPlan,
   type OrchestratorVerdict,
   type WorkerAgentRole,
 } from '@/lib/runner/orchestrator-plan';
+import { appendEvent, readMessages, updateRunStatus } from '@/lib/store/file-store';
+import { createId, nowIso } from '@/lib/utils/ids';
 export { buildAgentPrompt } from '@/lib/runner/agent-prompt-builder';
 
 export type AgentExecutionContext = AgentPromptContext;
@@ -37,6 +42,8 @@ export interface AgentConversationResult {
 
 const MAX_CONTEXT_MESSAGES = 12;
 const DEFAULT_MAX_VERIFICATION_ITERATIONS = 3;
+
+type InterventionDecisionOutcome = 'continue' | 'restart' | 'paused';
 
 function isUserFacingMessage(message: AgentMessage): boolean {
   return message.from === 'user' || message.to === 'user';
@@ -111,6 +118,9 @@ export async function runAgentConversation(input: {
   const outputs: Partial<Record<AgentRole, string>> = {};
   const emittedMessages: AgentMessage[] = [];
   const orchestratorVerdicts: OrchestratorVerdict[] = [];
+  const processedInterventionIds = new Set(
+    input.messages.filter((message) => message.kind === 'user_intervention').map((message) => message.id),
+  );
   let userAnswer: string | undefined;
   let orchestratorPlan = fallbackPlanFromStrategy(input.state, managers);
   const orchestratorEnabled = isOrchestratorEnabled(input.state);
@@ -152,6 +162,128 @@ export async function runAgentConversation(input: {
     return parseOrchestratorPlan(rawPlan, input.state);
   }
 
+  async function readPendingRuntimeInterventions(): Promise<AgentMessage[]> {
+    const latestMessages = await readMessages(context.runId);
+    return latestMessages.filter((message) => (
+      message.kind === 'user_intervention'
+      && !processedInterventionIds.has(message.id)
+    ));
+  }
+
+  function markInterventionsProcessed(messages: AgentMessage[]): void {
+    for (const message of messages) processedInterventionIds.add(message.id);
+  }
+
+  async function recordInterventionDecision(
+    decision: OrchestratorInterventionDecision,
+    pendingInterventions: AgentMessage[],
+    target: string,
+  ): Promise<void> {
+    await appendEvent(context.runId, {
+      id: createId('evt'),
+      runId: context.runId,
+      type: 'intervention.decision_made',
+      actor: 'orchestrator',
+      payload: {
+        action: decision.action,
+        reason: decision.reason,
+        instruction: decision.instruction,
+        question: decision.question,
+        target,
+        interventionIds: pendingInterventions.map((message) => message.id),
+        interventionCount: pendingInterventions.length,
+        fallback: decision.fallback,
+        parseError: decision.parseError,
+      },
+      createdAt: nowIso(),
+    });
+  }
+
+  async function invokeOrchestratorInterventionDecision(inputDecision: {
+    pendingInterventions: AgentMessage[];
+    currentAgent: AgentRole;
+    nextAgent?: WorkerAgentRole;
+  }): Promise<OrchestratorInterventionDecision> {
+    const definition = managers.agentRegistry.get('orchestrator');
+    const decisionContext: AgentExecutionContext = {
+      ...context,
+      orchestratorTask: 'intervention',
+      pendingInterventions: inputDecision.pendingInterventions,
+      interventionCheckpoint: {
+        currentAgent: inputDecision.currentAgent,
+        nextAgent: inputDecision.nextAgent,
+      },
+    };
+    const rawDecision = await input.invokeAgent({
+      definition,
+      prompt: managers.promptBuilder.build(definition, decisionContext),
+      context: decisionContext,
+    });
+    recordOrchestratorOutput(rawDecision);
+    return parseOrchestratorInterventionDecision(rawDecision, inputDecision.pendingInterventions);
+  }
+
+  async function handlePendingInterventions(inputDecision: {
+    currentAgent: AgentRole;
+    nextAgent?: WorkerAgentRole;
+    plan: OrchestratorPlan;
+  }): Promise<InterventionDecisionOutcome> {
+    const pendingInterventions = await readPendingRuntimeInterventions();
+    if (!pendingInterventions.length) return 'continue';
+
+    context.visibleConversation.push(...pendingInterventions);
+    markInterventionsProcessed(pendingInterventions);
+
+    if (!orchestratorEnabled) return 'continue';
+
+    const decision = await invokeOrchestratorInterventionDecision({
+      pendingInterventions,
+      currentAgent: inputDecision.currentAgent,
+      nextAgent: inputDecision.nextAgent,
+    });
+    const decisionBody = formatOrchestratorInterventionDecision(decision, pendingInterventions);
+
+    if (decision.action === 'ask_user') {
+      const question = await managers.messageBus.send({
+        runId: context.runId,
+        from: 'orchestrator',
+        to: 'user',
+        kind: 'question',
+        body: decision.question ?? '현재 작업을 중단할지, 기존 결과에 추가 조건으로 반영할지 알려주세요.',
+      });
+      context.visibleConversation.push(question);
+      emittedMessages.push(question);
+      await recordInterventionDecision(decision, pendingInterventions, 'user');
+      await updateRunStatus(context.runId, 'paused');
+      return 'paused';
+    }
+
+    const target = decision.action === 'restart'
+      ? 'all'
+      : (inputDecision.nextAgent ?? inputDecision.plan.finalResponder);
+    const message = await managers.messageBus.send({
+      runId: context.runId,
+      from: 'orchestrator',
+      to: target,
+      kind: 'instruction',
+      body: decisionBody,
+      requiresAck: target !== 'all',
+    });
+    context.handoffMessages.push(message);
+    emittedMessages.push(message);
+    await recordInterventionDecision(decision, pendingInterventions, target);
+
+    if (decision.action === 'restart') {
+      const latestIntervention = pendingInterventions.at(-1);
+      context.turnUserMessageId = latestIntervention?.id ?? context.turnUserMessageId;
+      context.userRequest = decision.instruction
+        ?? pendingInterventions.map((intervention) => intervention.body).join('\n');
+      return 'restart';
+    }
+
+    return 'continue';
+  }
+
   async function emitPlanMessages(plan: OrchestratorPlan): Promise<void> {
     if (!orchestratorEnabled) return;
     const summary = await managers.messageBus.send({
@@ -178,12 +310,24 @@ export async function runAgentConversation(input: {
     }
   }
 
-  async function executePlan(plan: OrchestratorPlan): Promise<string> {
+  async function executePlan(plan: OrchestratorPlan): Promise<{
+    candidateAnswer: string;
+    restarted: boolean;
+    paused: boolean;
+  }> {
     let candidateAnswer = '';
     await emitPlanMessages(plan);
 
+    const initialInterventionOutcome = await handlePendingInterventions({
+      currentAgent: 'orchestrator',
+      nextAgent: plan.steps[0]?.agent,
+      plan,
+    });
+    if (initialInterventionOutcome === 'paused') return { candidateAnswer, restarted: false, paused: true };
+    if (initialInterventionOutcome === 'restart') return { candidateAnswer, restarted: true, paused: false };
+
     for (const [index, step] of plan.steps.entries()) {
-      if (await input.shouldStop?.()) return candidateAnswer;
+      if (await input.shouldStop?.()) return { candidateAnswer, restarted: false, paused: false };
 
       const definition = managers.agentRegistry.get(step.agent);
       const body = await input.invokeAgent({
@@ -193,7 +337,7 @@ export async function runAgentConversation(input: {
       });
       outputs[step.agent] = body;
 
-      if (await input.shouldStop?.()) return candidateAnswer;
+      if (await input.shouldStop?.()) return { candidateAnswer, restarted: false, paused: false };
 
       const nextAgent = nextStepAgent(plan, index);
       if (nextAgent) {
@@ -233,9 +377,17 @@ export async function runAgentConversation(input: {
           userAnswer = body;
         }
       }
+
+      const interventionOutcome = await handlePendingInterventions({
+        currentAgent: definition.id,
+        nextAgent,
+        plan,
+      });
+      if (interventionOutcome === 'paused') return { candidateAnswer, restarted: false, paused: true };
+      if (interventionOutcome === 'restart') return { candidateAnswer, restarted: true, paused: false };
     }
 
-    return candidateAnswer;
+    return { candidateAnswer, restarted: false, paused: false };
   }
 
   async function invokeOrchestratorVerdict(candidateAnswer: string, iteration: number): Promise<OrchestratorVerdict> {
@@ -288,7 +440,8 @@ export async function runAgentConversation(input: {
   }
 
   if (!orchestratorEnabled) {
-    await executePlan(orchestratorPlan);
+    const execution = await executePlan(orchestratorPlan);
+    if (execution.paused) return stoppedResult(true);
     if (await input.shouldStop?.()) return stoppedResult(true);
     return {
       context,
@@ -303,9 +456,18 @@ export async function runAgentConversation(input: {
   }
 
   let currentPlan = orchestratorPlan;
-  for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
+  let iteration = 1;
+  while (iteration <= maxIterations) {
     if (await input.shouldStop?.()) return stoppedResult(true);
-    const candidateAnswer = await executePlan(currentPlan);
+    const execution = await executePlan(currentPlan);
+    if (execution.paused) return stoppedResult(true);
+    if (execution.restarted) {
+      if (await input.shouldStop?.()) return stoppedResult(true);
+      currentPlan = await invokeOrchestratorPlan();
+      orchestratorPlan = currentPlan;
+      continue;
+    }
+    const { candidateAnswer } = execution;
     if (await input.shouldStop?.()) return stoppedResult(true);
 
     const verdict = await invokeOrchestratorVerdict(candidateAnswer, iteration);
@@ -327,6 +489,7 @@ export async function runAgentConversation(input: {
     }
 
     currentPlan = orchestratorPlanFromVerdict(verdict, input.state, iteration + 1);
+    iteration += 1;
   }
 
   return {

@@ -130,7 +130,7 @@ test('intervention API starts a new agent answer turn after a completed run', as
   assert.ok(agentAnswers.at(-1)?.body.includes('두 번째 질문에 답해줘'));
 }));
 
-test('intervention API rejects a new prompt while agents are answering', async () => withStateDir(async () => {
+test('intervention API queues a new prompt while agents are answering', async () => withStateDir(async () => {
   const state = await createRun({ title: 'busy turn', brief: '진행 중 요청', mode: 'mock' });
   startMockRun(state.run.id);
   await waitForRunStatus(state.run.id, 'running');
@@ -138,10 +138,20 @@ test('intervention API rejects a new prompt while agents are answering', async (
   const response = await postIntervention(new Request(`http://agentboard.test/api/runs/${state.run.id}/interventions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body: '겹쳐 보내면 안 된다', to: 'all' }),
+    body: JSON.stringify({ body: '모바일 조건도 추가해줘', to: 'all' }),
   }), {
     params: Promise.resolve({ runId: state.run.id }),
   });
 
-  assert.equal(response.status, 409);
+  const payload = await response.json() as { queued?: boolean; interventionMode?: string };
+  assert.equal(response.status, 200);
+  assert.equal(payload.queued, true);
+  assert.equal(payload.interventionMode, 'during_run');
+
+  await waitForRunStatus(state.run.id, 'completed');
+  const [events, messages] = await Promise.all([readEvents(state.run.id), readMessages(state.run.id)]);
+  assert.ok(events.some((event) => event.type === 'user.intervention_queued'));
+  assert.ok(events.some((event) => event.type === 'intervention.decision_made' && event.payload.action === 'continue'));
+  assert.ok(messages.some((message) => message.from === 'user' && /모바일 조건/.test(message.body)));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && /Orchestrator Intervention Decision: continue/.test(message.body)));
 }, '0.2'));

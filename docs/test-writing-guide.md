@@ -34,6 +34,7 @@ AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, 
 - Client session store가 active/recent run을 기록하고 stale run을 안전하게 표시하는지
 - Delete API가 완료/중단 run을 삭제하고 client session index에서 제거하는지
 - Agent Session Runtime이 Orchestrator plan, prompt builder, message bus를 사용하는지
+- Agent Session Runtime이 진행 중 사용자 개입을 checkpoint에서 Orchestrator decision으로 처리하는지
 - `tmux-codex` adapter가 DONE marker, stable idle fallback, permission approval event를 올바르게 처리하는지
 
 ### E2E or smoke test
@@ -62,10 +63,11 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 7. Control stop API와 runner cancellation test
 8. CLI adapter command parsing / fake CLI integration test
 9. `tmux-codex` delayed DONE / idle fallback / approval approve-reject regression test
-10. Session persistence store/API test
-11. Chat UI state persistence smoke test
-12. Run delete store/API test
-13. Firebase adapter test는 optional
+10. 진행 중 intervention queue와 Orchestrator continue/restart/ask_user decision test
+11. Session persistence store/API test
+12. Chat UI state persistence smoke test
+13. Run delete store/API test
+14. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -165,7 +167,8 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] 4분할 Agent 채팅 패널에서 agent-agent message 확인 가능
 - [ ] Logs drawer에서 handoff/raw event 확인 가능
 - [ ] `tmux-codex` 권한 요청 카드 승인/거절 가능
-- [ ] 진행 중 composer가 잠기고 취소 버튼 표시
+- [ ] 진행 중 composer가 활성화되고 `개입 보내기`/`현재 작업 취소` 버튼 표시
+- [ ] 진행 중 개입 전송 시 Logs에 `user.intervention_queued`, `intervention.decision_made` 표시
 - [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
 - [ ] final artifact 표시

@@ -110,6 +110,28 @@ function mockOutput(input: AgentExecutionInput): string {
         nextSteps: [],
       });
     }
+    if (input.context.orchestratorTask === 'intervention') {
+      const pending = input.context.pendingInterventions?.map((message) => message.body).join('\n') ?? '';
+      if (/중단|취소|처음부터|다시|restart|새로/i.test(pending)) {
+        return JSON.stringify({
+          action: 'restart',
+          reason: '진행 중 사용자 개입이 현재 작업 방향 변경을 요구한다고 판단했습니다.',
+          instruction: pending,
+        });
+      }
+      if (/확인|선택|어떻게|애매|모호/i.test(pending)) {
+        return JSON.stringify({
+          action: 'ask_user',
+          reason: '진행 중 사용자 개입의 의도를 자동으로 판단하기 어렵습니다.',
+          question: '현재 작업을 중단하고 새 방향으로 갈까요, 아니면 기존 결과에 추가 조건으로 반영할까요?',
+        });
+      }
+      return JSON.stringify({
+        action: 'continue',
+        reason: '진행 중 사용자 개입을 현재 flow의 추가 조건으로 반영할 수 있습니다.',
+        instruction: pending,
+      });
+    }
     const request = input.context.userRequest;
     const needsPlan = /계획|플랜|plan|설계|아키텍처|architecture|구조|요구사항|스펙|spec/i.test(request);
     const needsEngineering = /구현|수정|추가|개발|코드|버그|오류|에러|설정|반영|config|adapter|runtime|프롬프트|prompt/i.test(request);

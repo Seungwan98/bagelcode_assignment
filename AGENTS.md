@@ -37,6 +37,7 @@ Primary proof points:
   - `TmuxSessionAdapter` for optional persistent Codex sessions. It must require AgentBoard transport markers, wait for a stable idle fallback before accepting missing `AGENTBOARD_DONE`, and surface Codex permission prompts as UI approval events.
   - Future Firebase/Cloud adapters must not break mock mode.
 - User interventions are first-class messages from `user` to an agent or `all`.
+- Active runs must still accept user intervention messages; Orchestrator decides at the next checkpoint whether to continue, restart, or ask the user for clarification.
 - Final artifacts must reference the run, participating agents, major messages, and any user intervention.
 
 ## Firebase and secret handling

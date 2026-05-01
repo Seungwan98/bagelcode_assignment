@@ -355,6 +355,26 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
       tone: event.type === 'continuation.max_iterations_reached' ? 'error' : 'route',
     };
   }
+  if (event.type === 'user.intervention_queued') {
+    return {
+      ...logBase(event),
+      title: '사용자 개입 접수',
+      detail: eventPayloadText(event, 'interventionMode') ?? eventPayloadText(event, 'messageId') ?? event.type,
+      route: false,
+      tone: 'route',
+    };
+  }
+  if (event.type === 'intervention.decision_made') {
+    const action = eventPayloadText(event, 'action');
+    return {
+      ...logBase(event),
+      title: `Orchestrator 개입 판단${action ? ` · ${action}` : ''}`,
+      detail: [eventPayloadText(event, 'target'), eventPayloadText(event, 'interventionCount')].filter(Boolean).join(' · ') || event.type,
+      body: eventPayloadText(event, 'reason') ?? eventPayloadText(event, 'instruction') ?? eventPayloadText(event, 'question'),
+      route: true,
+      tone: action === 'ask_user' ? 'error' : 'route',
+    };
+  }
   if (event.type === 'approval.requested' || event.type === 'approval.approved' || event.type === 'approval.rejected') {
     const command = eventPayloadText(event, 'command');
     const approvalId = eventPayloadText(event, 'approvalId');
@@ -455,6 +475,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
   const [showArtifact, setShowArtifact] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [expandedAgentRole, setExpandedAgentRole] = useState<AgentRole | null>(null);
   const [connected, setConnected] = useState(false);
   const [body, setBody] = useState('');
   const [controlStatus, setControlStatus] = useState('');
@@ -466,6 +487,10 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
   const orderedAgents = useMemo(
     () => [...runState.agents].sort((left, right) => agentPanelOrder(left) - agentPanelOrder(right)),
     [runState.agents],
+  );
+  const expandedAgent = useMemo(
+    () => orderedAgents.find((agent) => agent.role === expandedAgentRole) ?? null,
+    [expandedAgentRole, orderedAgents],
   );
   const agentRouteCount = useMemo(
     () => messages.filter((message) => isAgentToAgentMessage(message, agentMap)).length,
@@ -545,21 +570,23 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
   }, [onRunUpdated, runId]);
 
   useEffect(() => {
-    if (!selectedLogId) return undefined;
+    if (!selectedLogId && !expandedAgentRole) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedLogId(null);
+      if (event.key !== 'Escape') return;
+      if (selectedLogId) setSelectedLogId(null);
+      else setExpandedAgentRole(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [selectedLogId]);
+  }, [expandedAgentRole, selectedLogId]);
 
   async function sendChatMessage() {
-    if (!body.trim() || runInProgress) return;
-    setControlStatus('Agents에게 요청을 전달하는 중...');
+    if (!body.trim()) return;
+    setControlStatus(runInProgress ? 'Orchestrator에게 개입 요청을 전달하는 중...' : 'Agents에게 요청을 전달하는 중...');
     const response = await fetch(`/api/runs/${runId}/interventions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: 'all', body, priority: 'normal' }),
+      body: JSON.stringify({ to: 'all', body, priority: runInProgress ? 'high' : 'normal' }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
@@ -567,7 +594,9 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
       return;
     }
     setBody('');
-    setControlStatus('Agents가 답변을 생성하고 있습니다.');
+    setControlStatus(runInProgress
+      ? '개입 요청을 Orchestrator에게 전달했습니다. 현재 단계가 끝나면 반영 여부를 판단합니다.'
+      : 'Agents가 답변을 생성하고 있습니다.');
     await refreshSnapshot();
     onRunUpdated?.();
   }
@@ -607,6 +636,158 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
     setApprovalActionStatus((current) => ({ ...current, [approval.approvalId]: '' }));
     await refreshSnapshot();
     onRunUpdated?.();
+  }
+
+  function renderAgentPanel(agent: AgentState, options: { expanded?: boolean } = {}) {
+    const panelMessages = messages.filter((message) => isAgentPanelMessage(message, agent.id)).slice(options.expanded ? -40 : -16);
+    const latestAssignment = messages
+      .filter((message) => message.from === 'orchestrator' && message.to === agent.id && message.kind === 'instruction')
+      .at(-1);
+    const sentCount = messages.filter((message) => message.from === agent.id).length;
+    const receivedCount = messages.filter((message) => message.to === agent.id).length;
+    const isWorking = agent.status === 'thinking' || agent.status === 'waiting';
+    const session = runState.sessions?.[agent.role];
+    const approvalCards = approvalCardsForAgent(events, agent.role).slice(options.expanded ? -8 : -4);
+
+    return (
+      <article
+        className={`agent-panel ${agent.role} ${agent.status} ${latestAssignment ? 'has-assignment' : ''} ${options.expanded ? 'expanded' : ''}`}
+        key={options.expanded ? `expanded-${agent.id}` : agent.id}
+      >
+        <header className="agent-panel-header">
+          <div>
+            <span className="kicker">{agent.role}</span>
+            <h2>{agent.displayName}</h2>
+          </div>
+          <div className="agent-panel-header-actions">
+            <span className={`agent-status-pill ${agent.status}`}>{agent.status}</span>
+            {!options.expanded ? (
+              <button
+                className="agent-expand-trigger"
+                onClick={() => setExpandedAgentRole(agent.role)}
+                type="button"
+              >
+                크게 보기
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        <p className="agent-panel-situation">{agentSituation(agent)}</p>
+
+        <dl className="agent-panel-meta">
+          <div>
+            <dt>Adapter</dt>
+            <dd>{agent.adapter}</dd>
+          </div>
+          <div>
+            <dt>Sent</dt>
+            <dd>{sentCount}</dd>
+          </div>
+          <div>
+            <dt>Received</dt>
+            <dd>{receivedCount}</dd>
+          </div>
+          <div>
+            <dt>Last</dt>
+            <dd>{formatTime(agent.lastMessageAt)}</dd>
+          </div>
+          <div>
+            <dt>Session</dt>
+            <dd>{session ? `${session.transport} · ${session.status}` : 'none'}</dd>
+          </div>
+        </dl>
+
+        {latestAssignment ? (
+          <button
+            className="assignment-card"
+            onClick={() => setSelectedLogId(latestAssignment.id)}
+            type="button"
+          >
+            <span>Orchestrator assigned</span>
+            <strong>{actorLabel(agentMap, latestAssignment.to)}에게 전달된 작업</strong>
+            <p>{latestAssignment.body}</p>
+          </button>
+        ) : null}
+
+        <div className="agent-panel-feed" aria-label={`${agent.displayName} 메시지`}>
+          {approvalCards.map((approval) => {
+            const pending = approval.status === 'pending';
+            const actionStatus = approvalActionStatus[approval.approvalId];
+            return (
+              <article className={`agent-panel-approval ${approval.status}`} key={approval.approvalId}>
+                <button
+                  className="agent-panel-approval-main"
+                  onClick={() => setSelectedLogId(approval.eventId)}
+                  type="button"
+                >
+                  <span>{formatTime(approval.createdAt)} · 권한 요청</span>
+                  <strong>{pending ? '사용자 승인이 필요합니다' : approval.status === 'approved' ? '승인됨' : '거절됨'}</strong>
+                  <code>{approval.command}</code>
+                  <p>{approval.reason}</p>
+                  {approval.choices.length ? <small>{approval.choices.join(' · ')}</small> : null}
+                </button>
+                {pending ? (
+                  <div className="agent-panel-approval-actions">
+                    <button
+                      disabled={Boolean(actionStatus)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void submitApproval(approval, 'approve');
+                      }}
+                      type="button"
+                    >
+                      승인
+                    </button>
+                    <button
+                      className="danger"
+                      disabled={Boolean(actionStatus)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void submitApproval(approval, 'reject');
+                      }}
+                      type="button"
+                    >
+                      거절
+                    </button>
+                    {actionStatus ? <span>{actionStatus}</span> : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+
+          {panelMessages.length ? (
+            panelMessages.map((message) => (
+              <button
+                className={panelMessageClass(agent.id, message)}
+                key={message.id}
+                onClick={() => setSelectedLogId(message.id)}
+                type="button"
+              >
+                <span>{formatTime(message.createdAt)} · {message.kind}</span>
+                <strong>{panelMessageTitle(agent.id, message, agentMap)}</strong>
+                <p>{message.body}</p>
+              </button>
+            ))
+          ) : approvalCards.length ? null : (
+            <div className="agent-panel-empty">
+              <strong>아직 메시지가 없습니다.</strong>
+              <p>{agent.role === 'orchestrator' ? '사용자 요청을 받으면 라우팅 결정과 배정 메시지가 여기에 표시됩니다.' : 'Orchestrator가 이 Agent에게 작업을 배정하면 여기에 표시됩니다.'}</p>
+            </div>
+          )}
+
+          {isWorking ? (
+            <div className="agent-panel-working">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <p>{agent.displayName} 작업 중</p>
+            </div>
+          ) : null}
+        </div>
+      </article>
+    );
   }
 
 
@@ -730,144 +911,32 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
         ) : null}
 
         <section className="agent-board-grid" aria-label="에이전트별 협업 상황판">
-          {orderedAgents.map((agent) => {
-            const panelMessages = messages.filter((message) => isAgentPanelMessage(message, agent.id)).slice(-16);
-            const latestAssignment = messages
-              .filter((message) => message.from === 'orchestrator' && message.to === agent.id && message.kind === 'instruction')
-              .at(-1);
-            const sentCount = messages.filter((message) => message.from === agent.id).length;
-            const receivedCount = messages.filter((message) => message.to === agent.id).length;
-            const isWorking = agent.status === 'thinking' || agent.status === 'waiting';
-            const session = runState.sessions?.[agent.role];
-            const approvalCards = approvalCardsForAgent(events, agent.role).slice(-4);
-
-            return (
-              <article className={`agent-panel ${agent.role} ${agent.status}`} key={agent.id}>
-                <header className="agent-panel-header">
-                  <div>
-                    <span className="kicker">{agent.role}</span>
-                    <h2>{agent.displayName}</h2>
-                  </div>
-                  <span className={`agent-status-pill ${agent.status}`}>{agent.status}</span>
-                </header>
-
-                <p className="agent-panel-situation">{agentSituation(agent)}</p>
-
-                <dl className="agent-panel-meta">
-                  <div>
-                    <dt>Adapter</dt>
-                    <dd>{agent.adapter}</dd>
-                  </div>
-                  <div>
-                    <dt>Sent</dt>
-                    <dd>{sentCount}</dd>
-                  </div>
-                  <div>
-                    <dt>Received</dt>
-                    <dd>{receivedCount}</dd>
-                  </div>
-                  <div>
-                    <dt>Last</dt>
-                    <dd>{formatTime(agent.lastMessageAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Session</dt>
-                    <dd>{session ? `${session.transport} · ${session.status}` : 'none'}</dd>
-                  </div>
-                </dl>
-
-                {latestAssignment ? (
-                  <button
-                    className="assignment-card"
-                    onClick={() => setSelectedLogId(latestAssignment.id)}
-                    type="button"
-                  >
-                    <span>Orchestrator assigned</span>
-                    <strong>{actorLabel(agentMap, latestAssignment.to)}에게 전달된 작업</strong>
-                    <p>{latestAssignment.body}</p>
-                  </button>
-                ) : null}
-
-                <div className="agent-panel-feed" aria-label={`${agent.displayName} 메시지`}>
-                  {approvalCards.map((approval) => {
-                    const pending = approval.status === 'pending';
-                    const actionStatus = approvalActionStatus[approval.approvalId];
-                    return (
-                      <article className={`agent-panel-approval ${approval.status}`} key={approval.approvalId}>
-                        <button
-                          className="agent-panel-approval-main"
-                          onClick={() => setSelectedLogId(approval.eventId)}
-                          type="button"
-                        >
-                          <span>{formatTime(approval.createdAt)} · 권한 요청</span>
-                          <strong>{pending ? '사용자 승인이 필요합니다' : approval.status === 'approved' ? '승인됨' : '거절됨'}</strong>
-                          <code>{approval.command}</code>
-                          <p>{approval.reason}</p>
-                          {approval.choices.length ? <small>{approval.choices.join(' · ')}</small> : null}
-                        </button>
-                        {pending ? (
-                          <div className="agent-panel-approval-actions">
-                            <button
-                              disabled={Boolean(actionStatus)}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void submitApproval(approval, 'approve');
-                              }}
-                              type="button"
-                            >
-                              승인
-                            </button>
-                            <button
-                              className="danger"
-                              disabled={Boolean(actionStatus)}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void submitApproval(approval, 'reject');
-                              }}
-                              type="button"
-                            >
-                              거절
-                            </button>
-                            {actionStatus ? <span>{actionStatus}</span> : null}
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })}
-
-                  {panelMessages.length ? (
-                    panelMessages.map((message) => (
-                      <button
-                        className={panelMessageClass(agent.id, message)}
-                        key={message.id}
-                        onClick={() => setSelectedLogId(message.id)}
-                        type="button"
-                      >
-                        <span>{formatTime(message.createdAt)} · {message.kind}</span>
-                        <strong>{panelMessageTitle(agent.id, message, agentMap)}</strong>
-                        <p>{message.body}</p>
-                      </button>
-                    ))
-                  ) : approvalCards.length ? null : (
-                    <div className="agent-panel-empty">
-                      <strong>아직 메시지가 없습니다.</strong>
-                      <p>{agent.role === 'orchestrator' ? '사용자 요청을 받으면 라우팅 결정과 배정 메시지가 여기에 표시됩니다.' : 'Orchestrator가 이 Agent에게 작업을 배정하면 여기에 표시됩니다.'}</p>
-                    </div>
-                  )}
-
-                  {isWorking ? (
-                    <div className="agent-panel-working">
-                      <span className="typing-dot" />
-                      <span className="typing-dot" />
-                      <span className="typing-dot" />
-                      <p>{agent.displayName} 작업 중</p>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
+          {orderedAgents.map((agent) => renderAgentPanel(agent))}
         </section>
+
+        {expandedAgent ? (
+          <div className="agent-expand-backdrop" onClick={() => setExpandedAgentRole(null)} role="presentation">
+            <section
+              aria-labelledby="agent-expand-title"
+              aria-modal="true"
+              className="agent-expand-modal"
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+            >
+              <header className="agent-expand-header">
+                <div>
+                  <span className="kicker">Expanded Agent</span>
+                  <h2 id="agent-expand-title">{expandedAgent.displayName}</h2>
+                  <p>{expandedAgent.role} · {expandedAgent.status} · {agentSituation(expandedAgent)}</p>
+                </div>
+                <button className="secondary" onClick={() => setExpandedAgentRole(null)} type="button">닫기</button>
+              </header>
+              <div className="agent-expand-body">
+                {renderAgentPanel(expandedAgent, { expanded: true })}
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         <footer className="chat-composer-bar">
           {showArtifact && artifact ? (
@@ -883,12 +952,11 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
             <span className={`run-progress-indicator ${runInProgress ? 'active' : ''}`}>
               {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : 'Orchestrator에게 다음 요청을 보낼 수 있습니다.'}
             </span>
-            <span>{runInProgress ? '답변 생성 중에는 전송이 잠깁니다.' : 'Enter는 줄바꿈, ⌘/Ctrl + Enter는 전송'}</span>
+            <span>{runInProgress ? '진행 중에도 개입 요청을 보낼 수 있습니다.' : 'Enter는 줄바꿈, ⌘/Ctrl + Enter는 전송'}</span>
           </div>
           <div className="chat-input-row active-run-controls">
             <textarea
               aria-label="Agents에게 보낼 메시지"
-              disabled={runInProgress}
               onChange={(event) => setBody(event.target.value)}
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -896,13 +964,18 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
                   void sendChatMessage();
                 }
               }}
-              placeholder={runInProgress ? `${progressLabel}입니다. 각 Agent 패널과 Logs를 확인하거나 취소할 수 있습니다.` : 'Orchestrator에게 요청하세요. 예: Planner에게 요구사항을 먼저 정리하게 해줘.'}
-              value={runInProgress ? '' : body}
+              placeholder={runInProgress ? '진행 중에도 Orchestrator에게 추가 지시를 보낼 수 있습니다.' : 'Orchestrator에게 요청하세요. 예: Planner에게 요구사항을 먼저 정리하게 해줘.'}
+              value={body}
             />
             {runInProgress ? (
-              <button className="danger" onClick={() => void stopRun()} type="button">취소</button>
+              <div className="composer-action-group">
+                <button disabled={!body.trim()} onClick={() => void sendChatMessage()} type="button">개입 보내기</button>
+                <button className="danger" onClick={() => void stopRun()} type="button">현재 작업 취소</button>
+              </div>
             ) : (
-              <button disabled={!body.trim()} onClick={() => void sendChatMessage()} type="button">전송</button>
+              <div className="composer-action-group">
+                <button disabled={!body.trim()} onClick={() => void sendChatMessage()} type="button">전송</button>
+              </div>
             )}
           </div>
           {controlStatus ? <p className="composer-status">{controlStatus}</p> : null}
