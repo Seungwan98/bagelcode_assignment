@@ -67,12 +67,11 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 11. Session persistence store/API test
 12. Chat UI state persistence smoke test
 13. Run delete store/API test
-14. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
 - Mock mode를 기준으로 먼저 작성한다.
-- 외부 Firebase 또는 실제 Codex CLI 의존 테스트는 기본 CI/로컬 테스트에서 제외한다.
+- 실제 Codex CLI 의존 테스트는 기본 CI/로컬 테스트에서 제외한다.
 - 파일 시스템 테스트는 임시 디렉터리를 사용한다.
 - 테스트가 생성한 `.agentboard` state는 테스트 종료 후 삭제한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.

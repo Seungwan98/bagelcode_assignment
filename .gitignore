@@ -42,7 +42,7 @@ pnpm-debug.log*
 !.env.example
 *.local
 
-# Firebase local config / credentials
+# Legacy cloud/local credential safety
 config/firebase.local.json
 config/firebase.admin.local.json
 config/firebase-service-account*.json

@@ -255,24 +255,6 @@ AGENTBOARD_STALE_RUN_MS=1800000 npm run dev
 
 stale run을 계속 진행시키는 resume-runner 기능은 MVP 범위가 아니다. 새 run을 생성하거나 기존 기록을 참고해 후속 지시를 다시 시작한다.
 
-## Firebase 관련 오류
-
-### 증상
-
-```text
-Firebase: Error (auth/invalid-api-key)
-```
-
-### 해결
-
-- Mock mode에서는 Firebase가 필요 없어야 한다.
-- Firebase mode를 켠 경우 `.env.local` 또는 `config/firebase.local.json` 값을 확인한다.
-- `NEXT_PUBLIC_FIREBASE_API_KEY`가 비어 있지 않은지 확인한다.
-
-### 주의
-
-Firebase Admin private key를 client 환경변수에 넣지 않는다.
-
 ## CLI adapter가 실행되지 않음
 
 ### 증상
@@ -325,7 +307,6 @@ git status --short
 
 ```text
 .env.local
-config/firebase.local.json
 .agentboard/runs/...
 ```
 
@@ -334,13 +315,13 @@ config/firebase.local.json
 `.gitignore`를 확인한다.
 
 ```bash
-git check-ignore .env.local config/firebase.local.json .agentboard/runs/example/events.jsonl
+git check-ignore .env.local .agentboard/runs/example/events.jsonl
 ```
 
 이미 staged 됐다면 unstage한다.
 
 ```bash
-git restore --staged .env.local config/firebase.local.json .agentboard
+git restore --staged .env.local .agentboard
 ```
 
 ## `DerivedData` 또는 `Index.noindex`가 Git에 잡힘
@@ -368,7 +349,7 @@ rm -rf TaskFlowMVVM/DerivedData TaskFlowMVVM/Derived
 
 ### 증상
 
-- 문서에는 Firebase 기본 실행이라고 되어 있지만 실제로는 mock mode가 기본임
+- 문서에는 optional 기능이 기본 실행처럼 적혀 있지만 실제로는 mock mode가 기본임
 - API 경로가 문서와 다름
 - commit 규칙이 문서마다 다름
 

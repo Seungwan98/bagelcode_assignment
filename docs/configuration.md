@@ -2,14 +2,14 @@
 
 ## 목적
 
-AgentBoard에서 사용하는 설정값, Firebase config, CLI adapter 환경변수, ignore 정책을 설명한다.
+AgentBoard에서 사용하는 설정값, CLI adapter 환경변수, ignore 정책을 설명한다.
 
 ## 설정 원칙
 
 - 기본 실행은 `mock` mode다.
 - 실제 secret은 commit하지 않는다.
 - commit 가능한 파일은 예시 템플릿만 둔다.
-- Firebase와 실제 AI CLI는 optional이다.
+- 실제 AI CLI는 optional이다.
 
 ## 환경변수 파일
 
@@ -41,83 +41,6 @@ AGENTBOARD_MODE=mock
 | `mock` | 기본값. 외부 key 없이 deterministic agent flow 실행 |
 | `cli` | optional. 로컬 AI CLI adapter 사용 |
 
-## Firebase Web config
-
-Firebase client SDK를 사용할 경우 `NEXT_PUBLIC_*` 환경변수를 사용한다.
-
-```bash
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=
-```
-
-주의:
-
-- `NEXT_PUBLIC_*` 값은 브라우저 번들에 포함된다.
-- Firebase Web API key는 private secret처럼 다루지는 않지만, source에 하드코딩하지 않는다.
-- Admin SDK private key는 절대 `NEXT_PUBLIC_*`에 넣지 않는다.
-
-## Firebase local JSON config
-
-커밋 가능한 예시:
-
-```text
-config/firebase.example.json
-```
-
-로컬 실제 값:
-
-```text
-config/firebase.local.json
-```
-
-초기 설정:
-
-```bash
-cp config/firebase.example.json config/firebase.local.json
-```
-
-예시 구조:
-
-```json
-{
-  "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
-  "authDomain": "YOUR_PROJECT.firebaseapp.com",
-  "projectId": "YOUR_PROJECT_ID",
-  "storageBucket": "YOUR_PROJECT.appspot.com",
-  "messagingSenderId": "YOUR_MESSAGING_SENDER_ID",
-  "appId": "YOUR_FIREBASE_APP_ID",
-  "measurementId": "YOUR_GA_MEASUREMENT_ID_OPTIONAL"
-}
-```
-
-## Firebase Admin config
-
-Admin SDK가 필요해진 뒤에만 설정한다.
-
-허용 방식:
-
-```bash
-GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
-```
-
-또는 server-only 환경변수:
-
-```bash
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
-```
-
-금지:
-
-- service account JSON commit
-- private key를 `NEXT_PUBLIC_*`에 저장
-- `config/firebase.admin.local.json` commit
 
 ## CLI adapter config
 
@@ -267,9 +190,6 @@ AGENTBOARD_STALE_RUN_MS=900000
 ```text
 .env.local
 .env.*.local
-config/firebase.local.json
-config/firebase.admin.local.json
-config/firebase-service-account*.json
 .agentboard/
 .next/
 node_modules/

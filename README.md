@@ -11,7 +11,7 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 Orchestrator가 
 - 브라우저별 `clientSessionId`로 최근 run을 연결하고, 루트 페이지에서 이전 대화를 이어갈 수 있습니다.
 - 좌측 세션 목록에서 완료/중단된 대화를 삭제할 수 있습니다.
 - 채팅방의 선택 agent, Logs/보고서 열림 상태는 run별로 브라우저에 복원됩니다.
-- 기본 mock mode는 Firebase key나 실제 AI CLI 없이 실행됩니다.
+- 기본 mock mode는 외부 key나 실제 AI CLI 없이 실행됩니다.
 - CLI mode에서 Codex stdout은 AgentBoard session runtime에 저장되고 다음 Agent prompt context로 주입됩니다.
 
 ## 설치
@@ -82,7 +82,6 @@ npm run build
 
 ## Optional integrations
 
-- Firebase config는 `docs/configuration.md`를 참고하세요.
 - 실제 `codex` CLI adapter는 `cli` mode에서 사용할 수 있습니다. 현재 CLI mode는 Orchestrator, Planner, Engineer, Reviewer가 모두 Codex를 사용할 수 있으며 AgentBoard가 session context를 관리합니다.
 
 CLI mode 예시:

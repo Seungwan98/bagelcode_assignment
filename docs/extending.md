@@ -79,30 +79,6 @@ AGENTBOARD_CODEX_CMD="codex exec"
 AGENTBOARD_CODEX_PROMPT_MODE=append-arg
 ```
 
-## Firebase persistence 추가
-
-Firebase는 local JSONL store의 대체제가 아니라 optional persistence adapter로 시작한다.
-
-권장 순서:
-
-1. `PersistenceAdapter` interface 정의
-2. `FilePersistenceAdapter`를 기존 JSONL store 위에 래핑
-3. `FirebasePersistenceAdapter` 추가
-4. mock run이 file adapter로 계속 동작하는지 확인
-5. Firebase mode 테스트는 별도 optional 테스트로 분리
-
-예시 interface:
-
-```ts
-interface PersistenceAdapter {
-  appendEvent(runId: string, event: RunEvent): Promise<void>;
-  appendMessage(runId: string, message: AgentMessage): Promise<void>;
-  readRun(runId: string): Promise<Run>;
-  readEvents(runId: string): Promise<RunEvent[]>;
-  writeArtifact(runId: string, artifact: Artifact, body: string): Promise<void>;
-}
-```
-
 ## UI 기능 추가
 
 ### Message graph

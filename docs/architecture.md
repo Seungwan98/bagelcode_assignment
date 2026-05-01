@@ -172,7 +172,6 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 - `MockAgentAdapter`: README 기본 데모. 외부 key 없이 deterministic하게 동작한다.
 - `CliAgentAdapter`: optional. 로컬 `codex` CLI를 `shell: false`로 실행하고 stdout을 runtime에 반환한다. Runtime이 stdout을 Agent message로 저장하고 다음 Agent prompt context에 주입한다.
 - `TmuxSessionAdapter`: optional. role별 persistent tmux session에 Codex를 유지하고, prompt마다 AgentBoard transport marker를 요구한다. 긴 prompt는 `.agentboard/runs/<runId>/tmux-prompts/` 임시 파일을 통해 `tmux load-buffer`로 주입한 뒤 삭제한다. `capture-pane` polling으로 `AGENTBOARD_DONE` marker를 감지하면 `session.completed` 이벤트를 남기고 marker를 제거한 output만 Runtime에 반환한다. DONE marker가 누락되어도 `AGENTBOARD_BEGIN` 이후 output이 있고 Codex가 idle prompt로 복귀한 뒤 같은 output이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지되어야 `completionSource=idle-prompt-fallback`으로 완료 처리한다. Codex 권한 프롬프트는 `approval.requested` event로 승격하고 Web UI 승인/거절을 `POST /api/runs/:runId/approvals`를 통해 다시 tmux pane에 주입한다.
-- Firebase/Cloud adapter: optional future work. MVP 기본 경로를 깨면 안 된다.
 
 CLI mode 기본 role 매핑:
 
@@ -314,12 +313,11 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 8. 보고서 drawer
 9. Browser session resume와 ChatRoom UI state persistence
 10. README 실행 흐름
-11. Optional Firebase/CLI adapter
+11. Optional CLI/tmux adapter
 
 ## 설계 제약
 
 - Mock mode는 항상 외부 key 없이 실행 가능해야 한다.
-- Firebase는 optional이어야 하며 local file-backed mode를 대체하지 않는다.
 - CLI adapter는 allowlist 기반으로 실행하고 shell 문자열 조합을 피한다.
 - 실제 secret은 `.env.local`이나 ignored local config에만 둔다.
 - `.agentboard/runs/`와 Xcode/Swift `DerivedData`, `.noindex`, `xcuserdata`는 생성 상태이므로 commit하지 않는다.

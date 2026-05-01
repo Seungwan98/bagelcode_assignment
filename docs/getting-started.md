@@ -12,7 +12,7 @@
 - npm
 - macOS/Linux 권장
 
-Mock mode는 Firebase key 또는 Codex CLI 없이 실행되어야 한다.
+Mock mode는 외부 key 또는 Codex CLI 없이 실행되어야 한다.
 
 ## 설치
 
@@ -110,12 +110,6 @@ CLI가 prompt를 argument로 받는 경우:
 ```bash
 AGENTBOARD_CLI_PROMPT_MODE=append-arg npm run dev
 ```
-
-## Optional Firebase mode
-
-Firebase는 선택 사항이다. 먼저 `configuration.md`를 보고 `.env.local` 또는 `config/firebase.local.json`을 준비한다.
-
-Mock mode에서는 Firebase 설정이 없어도 된다.
 
 ## 성공 기준
 
