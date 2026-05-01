@@ -46,6 +46,8 @@ AGENTBOARD_MODE=mock
 
 현재 실제 AI adapter는 Codex만 사용한다. 기본 데모는 여전히 `mock` mode이며, `AGENTBOARD_MODE=cli` 또는 Chat UI의 `cli` mode는 로컬 Codex가 준비된 경우에만 사용한다. 실제 작업과 시연은 role별 persistent session을 유지하는 `tmux-codex`를 우선한다. Codex 출력은 직접 Agent 간 통신 채널이 아니라 AgentBoard session runtime이 message로 저장하고 다음 Agent prompt context에 주입하는 adapter 출력이다.
 
+role별 adapter 환경변수를 생략하면 `cli` mode의 기본 adapter는 모두 `tmux-codex`다. `codex` one-shot adapter는 명시적으로 설정했을 때만 사용한다.
+
 지원 adapter 값:
 
 | 값 | 권장도 | 설명 |

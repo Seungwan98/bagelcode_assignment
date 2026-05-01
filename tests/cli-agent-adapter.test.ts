@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
+import { resolveCliAdapterForRole } from '../src/lib/runner/agent-config';
 import { CliAgentAdapter, parseCommandSpec, resolveCliCommandConfig } from '../src/lib/runner/cli-agent-adapter';
 
 async function createEchoCli(): Promise<{ dir: string; script: string; cleanup: () => Promise<void> }> {
@@ -22,6 +23,16 @@ process.stdin.on('end', () => {
 test('parseCommandSpec supports quoted args and rejects shell metacharacters', () => {
   assert.deepEqual(parseCommandSpec('codex exec "hello world"'), ['codex', 'exec', 'hello world']);
   assert.throws(() => parseCommandSpec('codex exec hello; rm -rf /'), /metacharacters/);
+});
+
+test('CLI adapter defaults to tmux-codex unless a role override is configured', () => {
+  const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: 'test' };
+  assert.equal(resolveCliAdapterForRole('orchestrator', emptyEnv), 'tmux-codex');
+  assert.equal(resolveCliAdapterForRole('planner', emptyEnv), 'tmux-codex');
+  assert.equal(resolveCliAdapterForRole('engineer', emptyEnv), 'tmux-codex');
+  assert.equal(resolveCliAdapterForRole('reviewer', emptyEnv), 'tmux-codex');
+
+  assert.equal(resolveCliAdapterForRole('engineer', { NODE_ENV: 'test', AGENTBOARD_ENGINEER_ADAPTER: 'codex' }), 'codex');
 });
 
 test('CliAgentAdapter sends prompt through stdin mode', async () => {

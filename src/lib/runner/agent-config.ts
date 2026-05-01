@@ -3,10 +3,10 @@ import type { AgentAdapterKind, AgentRole, RunMode } from '@/lib/protocol/types'
 export type CliAdapterKind = Exclude<AgentAdapterKind, 'mock'>;
 
 const DEFAULT_CLI_ADAPTER_BY_ROLE: Record<AgentRole, CliAdapterKind> = {
-  orchestrator: 'codex',
-  planner: 'codex',
-  engineer: 'codex',
-  reviewer: 'codex',
+  orchestrator: 'tmux-codex',
+  planner: 'tmux-codex',
+  engineer: 'tmux-codex',
+  reviewer: 'tmux-codex',
 };
 
 const ROLE_ENV_KEYS: Record<AgentRole, string> = {
