@@ -17,17 +17,20 @@ AgentBoard에 새로운 agent, adapter, storage, UI 기능을 추가할 때 지�
 예: `researcher` agent 추가
 
 1. `AgentRole` union에 role을 추가한다.
-2. `AgentDefinition` registry에 표시 이름, description, system prompt, handoff target을 추가한다.
-3. Agent Session Runtime의 실행 순서 또는 handoff 규칙을 확장한다.
-4. Mock output과 CLI prompt context test를 추가한다.
-5. Artifact에 해당 role의 기여가 표시되게 한다.
+2. `AgentDefinition` registry에 표시 이름, description, system prompt를 추가한다.
+3. Orchestrator Agent system prompt의 사용 가능 Agent 설명과 선택 기준을 확장한다.
+4. 필요하면 `orchestrator-strategy` fallback 순서를 확장한다.
+5. 필요하면 `agent-prompt-builder`에서 role별 출력 지시를 보강한다.
+6. Mock output과 CLI prompt context test를 추가한다.
+7. Agent Managers 주입 테스트로 새 role이 message bus를 거치는지 확인한다.
+8. Artifact에 해당 role의 기여가 표시되게 한다.
 
 예상 메시지 흐름:
 
 ```text
-planner -> researcher: 조사 요청
-researcher -> planner: 조사 결과
-planner -> engineer: 구현 방향 전달
+orchestrator -> researcher: 조사 업무 배정
+researcher -> engineer: 조사 결과 handoff
+engineer -> reviewer: 구현 방향 handoff
 ```
 
 ## 새 Agent adapter 추가
@@ -58,7 +61,7 @@ interface AgentAdapter {
 stdout을 Agent Session Runtime에 반환한다. Runtime이 stdout을 message로 저장하고 다음 Agent prompt context에 주입한다. `cli` run은 다음 순서로 진행한다.
 
 ```text
-Planner CLI -> Engineer CLI -> Reviewer CLI -> final artifact
+Orchestrator CLI -> selected Agent CLI(s) -> final artifact
 ```
 
 새 CLI를 붙일 때는 다음을 지킨다.

@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { POST as createRun } from '../src/app/api/runs/route';
+import { DELETE as deleteRunRoute } from '../src/app/api/runs/[runId]/route';
 import { GET as getSession } from '../src/app/api/sessions/[clientSessionId]/route';
 import { POST as activateRun } from '../src/app/api/sessions/[clientSessionId]/active-run/route';
+import { updateRunStatus } from '../src/lib/store/file-store';
 
 async function withStateDir<T>(fn: () => Promise<T>): Promise<T> {
   const previousDir = process.env.AGENTBOARD_STATE_DIR;
@@ -99,4 +101,60 @@ test('session APIs reject unsafe clientSessionId values', async () => withStateD
     params: Promise.resolve({ clientSessionId: '..%2Fbad' }),
   });
   assert.equal(sessionResponse.status, 400);
+}));
+
+test('run delete API removes a completed run from the client session', async () => withStateDir(async () => {
+  const createResponse = await createRun(new Request('http://agentboard.test/api/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Delete API run',
+      brief: '삭제 API가 세션 목록에서도 제거해야 한다',
+      mode: 'mock',
+      clientSessionId: 'client_delete_api_session',
+    }),
+  }));
+  const created = await createResponse.json() as { ok: boolean; runId: string };
+  await updateRunStatus(created.runId, 'completed');
+
+  const deleteResponse = await deleteRunRoute(new Request(`http://agentboard.test/api/runs/${created.runId}`, {
+    method: 'DELETE',
+  }), {
+    params: Promise.resolve({ runId: created.runId }),
+  });
+  assert.equal(deleteResponse.status, 200);
+
+  const sessionResponse = await getSession(new Request('http://agentboard.test/api/sessions/client_delete_api_session'), {
+    params: Promise.resolve({ clientSessionId: 'client_delete_api_session' }),
+  });
+  const snapshot = await sessionResponse.json() as { ok: boolean; recentRuns: Array<{ runId: string }>; activeRun?: { runId: string } };
+
+  assert.equal(snapshot.ok, true);
+  assert.equal(snapshot.activeRun, undefined);
+  assert.deepEqual(snapshot.recentRuns, []);
+}));
+
+test('run delete API rejects running runs', async () => withStateDir(async () => {
+  const createResponse = await createRun(new Request('http://agentboard.test/api/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Running delete API run',
+      brief: '진행 중 삭제는 API에서 막아야 한다',
+      mode: 'mock',
+      clientSessionId: 'client_running_delete_api_session',
+    }),
+  }));
+  const created = await createResponse.json() as { ok: boolean; runId: string };
+  await updateRunStatus(created.runId, 'running');
+
+  const deleteResponse = await deleteRunRoute(new Request(`http://agentboard.test/api/runs/${created.runId}`, {
+    method: 'DELETE',
+  }), {
+    params: Promise.resolve({ runId: created.runId }),
+  });
+  const body = await deleteResponse.json() as { error?: { code?: string } };
+
+  assert.equal(deleteResponse.status, 409);
+  assert.equal(body.error?.code, 'RUN_IN_PROGRESS');
 }));

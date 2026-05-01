@@ -1,13 +1,16 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import type {
   AgentMessage,
   AgentRole,
+  AgentSessionHandle,
+  AgentSessionStatus,
   AgentState,
   Artifact,
   ClientSession,
   ClientSessionRunSummary,
   ClientSessionSnapshot,
+  ContinuationState,
   Run,
   RunEvent,
   RunMode,
@@ -23,11 +26,13 @@ export function getAgentboardRoot(): string {
   return isAbsolute(root) ? root : join(/*turbopackIgnore: true*/ process.cwd(), root);
 }
 
-const DEFAULT_AGENTS: AgentRole[] = ['planner', 'engineer', 'reviewer'];
+const DEFAULT_AGENTS: AgentRole[] = ['orchestrator', 'planner', 'engineer', 'reviewer'];
 const ACTIVE_RUN_STATUSES = new Set<Run['status']>(['created', 'running', 'paused']);
 const CLIENT_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{3,128}$/;
 const MAX_SESSION_RECENT_RUNS = 12;
 const DEFAULT_STALE_RUN_AFTER_MS = 15 * 60 * 1000;
+const DEFAULT_CONTINUATION_IDLE_TIMEOUT_MS = 15_000;
+const DEFAULT_CONTINUATION_MAX_ITERATIONS = 5;
 export function runDir(runId: string): string {
   return join(getAgentboardRoot(), runId);
 }
@@ -134,6 +139,38 @@ function staleRunAfterMs(): number {
   return configured;
 }
 
+function continuationIdleTimeoutMs(): number {
+  const configured = Number(process.env.AGENTBOARD_CONTINUATION_IDLE_TIMEOUT_MS ?? DEFAULT_CONTINUATION_IDLE_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured < 0) return DEFAULT_CONTINUATION_IDLE_TIMEOUT_MS;
+  return configured;
+}
+
+function continuationMaxIterations(): number {
+  const configured = Number(process.env.AGENTBOARD_CONTINUATION_MAX_ITERATIONS ?? DEFAULT_CONTINUATION_MAX_ITERATIONS);
+  if (!Number.isFinite(configured) || configured < 1) return DEFAULT_CONTINUATION_MAX_ITERATIONS;
+  return Math.floor(configured);
+}
+
+function continuationEnabled(): boolean {
+  return process.env.AGENTBOARD_CONTINUATION_ENABLED !== 'false';
+}
+
+export function createContinuationState(input: Partial<ContinuationState> = {}): ContinuationState {
+  return {
+    enabled: input.enabled ?? continuationEnabled(),
+    iteration: input.iteration ?? 0,
+    maxIterations: input.maxIterations ?? continuationMaxIterations(),
+    idleTimeoutMs: input.idleTimeoutMs ?? continuationIdleTimeoutMs(),
+    lastInjectedAt: input.lastInjectedAt,
+    reason: input.reason,
+    completedAt: input.completedAt,
+  };
+}
+
+export function normalizeContinuationState(state: RunState): ContinuationState {
+  return createContinuationState(state.continuation);
+}
+
 function shouldMarkRunningRunStale(run: Run, nowMs = Date.now()): boolean {
   if (run.status !== 'running') return false;
   const updatedAtMs = Date.parse(run.updatedAt);
@@ -167,6 +204,22 @@ async function writeClientSession(session: ClientSession): Promise<void> {
   await writeTextAtomic(clientSessionPath(session.id), `${JSON.stringify(session, null, 2)}\n`);
 }
 
+export async function removeClientSessionRun(clientSessionId: string, runId: string): Promise<ClientSession> {
+  const session = await readClientSession(clientSessionId);
+  const runs = session.runs.filter((item) => item.runId !== runId).sort(sessionSort).slice(0, MAX_SESSION_RECENT_RUNS);
+  const recentRunIds = session.recentRunIds.filter((item) => item !== runId);
+  const activeRun = runs.find((item) => isActiveRun(item.status));
+  const nextSession: ClientSession = {
+    ...session,
+    updatedAt: nowIso(),
+    activeRunId: activeRun?.runId,
+    recentRunIds,
+    runs,
+  };
+  await writeClientSession(nextSession);
+  return nextSession;
+}
+
 async function upsertClientSessionRun(run: Run): Promise<void> {
   if (!run.clientSessionId) return;
   const session = await readClientSession(run.clientSessionId);
@@ -191,6 +244,11 @@ async function markStaleRunningRunIfNeeded(state: RunState, now = new Date()): P
   state.run.updatedAt = staleAt;
   state.run.completedAt = staleAt;
   state.run.staleReason = 'Run was still running after the local runner heartbeat window elapsed.';
+  state.continuation = createContinuationState({
+    ...normalizeContinuationState(state),
+    completedAt: staleAt,
+    reason: state.run.staleReason,
+  });
   await writeState(state.run.id, state);
   await appendEvent(state.run.id, {
     id: createId('evt'),
@@ -259,7 +317,7 @@ export async function createRun(input: { title: string; brief: string; mode: Run
     createdAt,
     updatedAt: createdAt,
   };
-  const state: RunState = { run, agents: createAgentStates(input.agents, input.mode) };
+  const state: RunState = { run, agents: createAgentStates(input.agents, input.mode), continuation: createContinuationState() };
   await mkdir(runDir(run.id), { recursive: true });
   await mkdir(join(runDir(run.id), 'artifacts'), { recursive: true });
   await Promise.all(state.agents.map((agent) => mkdir(join(runDir(run.id), 'agents', agent.id), { recursive: true })));
@@ -292,9 +350,72 @@ export async function updateRunStatus(runId: string, status: Run['status']): Pro
   const updatedAt = nowIso();
   state.run.status = status;
   state.run.updatedAt = updatedAt;
-  if (status === 'completed' || status === 'failed' || status === 'stopped' || status === 'stale') state.run.completedAt = updatedAt;
+  if (status === 'completed' || status === 'failed' || status === 'stopped' || status === 'stale') {
+    state.run.completedAt = updatedAt;
+    state.continuation = createContinuationState({
+      ...normalizeContinuationState(state),
+      completedAt: updatedAt,
+    });
+  }
   await writeState(runId, state);
   return state;
+}
+
+export async function resetContinuationState(runId: string): Promise<ContinuationState> {
+  const state = await readState(runId);
+  state.continuation = createContinuationState();
+  state.run.updatedAt = nowIso();
+  await writeState(runId, state);
+  return state.continuation;
+}
+
+export async function updateContinuationState(
+  runId: string,
+  update: Partial<ContinuationState> | ((current: ContinuationState) => ContinuationState),
+): Promise<ContinuationState> {
+  const state = await readState(runId);
+  const current = normalizeContinuationState(state);
+  state.continuation = typeof update === 'function'
+    ? update(current)
+    : createContinuationState({ ...current, ...update });
+  state.run.updatedAt = nowIso();
+  await writeState(runId, state);
+  return state.continuation;
+}
+
+export async function markRunStale(runId: string, reason: string, payload: Record<string, unknown> = {}): Promise<RunState> {
+  const state = await readState(runId);
+  const staleAt = nowIso();
+  state.run.status = 'stale';
+  state.run.updatedAt = staleAt;
+  state.run.completedAt = staleAt;
+  state.run.staleReason = reason;
+  state.continuation = createContinuationState({
+    ...normalizeContinuationState(state),
+    completedAt: staleAt,
+    reason,
+  });
+  await writeState(runId, state);
+  await appendEvent(runId, {
+    id: createId('evt'),
+    runId,
+    type: 'run.stale',
+    actor: 'continuation-watchdog',
+    payload: { reason, staleAt, ...payload },
+    createdAt: staleAt,
+  });
+  return state;
+}
+
+export async function deleteRun(runId: string): Promise<void> {
+  const state = await readState(runId);
+  if (isActiveRun(state.run.status)) {
+    throw new Error('Run is in progress');
+  }
+  await rm(runDir(runId), { recursive: true, force: false });
+  if (state.run.clientSessionId) {
+    await removeClientSessionRun(state.run.clientSessionId, runId);
+  }
 }
 
 export async function updateAgentStatus(runId: string, agentId: string, status: AgentState['status']): Promise<void> {
@@ -315,6 +436,42 @@ export async function updateAgentStatus(runId: string, agentId: string, status: 
   });
 }
 
+export async function upsertAgentSessionHandle(
+  runId: string,
+  role: AgentRole,
+  handle: AgentSessionHandle,
+): Promise<AgentSessionHandle> {
+  const state = await readState(runId);
+  const updatedAt = nowIso();
+  const nextHandle = { ...handle, updatedAt };
+  state.sessions = { ...(state.sessions ?? {}), [role]: nextHandle };
+  state.run.updatedAt = updatedAt;
+  await writeState(runId, state);
+  return nextHandle;
+}
+
+export async function updateAgentSessionStatus(
+  runId: string,
+  role: AgentRole,
+  status: AgentSessionStatus,
+  timestamps: Partial<Pick<AgentSessionHandle, 'lastInjectedAt' | 'lastCapturedAt'>> = {},
+): Promise<AgentSessionHandle | undefined> {
+  const state = await readState(runId);
+  const existing = state.sessions?.[role];
+  if (!existing) return undefined;
+  const updatedAt = nowIso();
+  const nextHandle: AgentSessionHandle = {
+    ...existing,
+    ...timestamps,
+    status,
+    updatedAt,
+  };
+  state.sessions = { ...(state.sessions ?? {}), [role]: nextHandle };
+  state.run.updatedAt = updatedAt;
+  await writeState(runId, state);
+  return nextHandle;
+}
+
 export async function appendEvent(runId: string, event: RunEvent): Promise<void> {
   await appendJsonl(eventsPath(runId), event);
 }
@@ -330,6 +487,29 @@ export async function appendMessage(message: AgentMessage): Promise<void> {
 
 export async function readMessages(runId: string): Promise<AgentMessage[]> {
   return readJsonl<AgentMessage>(messagesPath(runId));
+}
+
+export async function getRunActivity(runId: string): Promise<{ latestActivityAt: string; latestActivityAtMs: number }> {
+  const [state, events, messages] = await Promise.all([
+    readState(runId),
+    readEvents(runId),
+    readMessages(runId),
+  ]);
+  const candidates = [
+    state.run.updatedAt,
+    state.continuation?.lastInjectedAt,
+    ...state.agents.map((agent) => agent.lastMessageAt),
+    events.at(-1)?.createdAt,
+    messages.at(-1)?.createdAt,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const latestActivityAtMs = candidates
+    .map((value) => Date.parse(value))
+    .filter(Number.isFinite)
+    .reduce((latest, value) => Math.max(latest, value), 0);
+  return {
+    latestActivityAt: new Date(latestActivityAtMs || Date.now()).toISOString(),
+    latestActivityAtMs: latestActivityAtMs || Date.now(),
+  };
 }
 
 export async function writeArtifact(runId: string, body: string, createdBy = 'reviewer'): Promise<Artifact> {

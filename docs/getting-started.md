@@ -36,21 +36,21 @@ http://localhost:3000
 
 ## 첫 실행 시나리오
 
-1. `/` 페이지에서 첫 요청 composer를 확인한다.
-2. 과제 brief를 입력한다.
+1. `/` 페이지에서 좌측 세션 목록과 중앙 챗봇 composer를 확인한다.
+2. 중앙 composer에 첫 요청을 입력한다.
 
    ```text
    여러 AI 에이전트가 협업하는 Chat MVP 계획을 만들어줘.
    ```
 
 3. 실행 모드는 `mock`을 선택한다.
-4. `Agents에게 전송` 버튼을 누른다.
-5. `/runs/<runId>` 채팅방으로 이동한다.
-6. 상단 우측 `Logs` 버튼에서 다음 흐름을 확인하고, 로그 항목을 눌러 전체 payload를 팝업으로 확인한다.
+4. `전송` 버튼을 누른다.
+5. 새 run이 좌측 세션 목록에 추가되고 중앙 채팅 영역에서 선택되는지 확인한다.
+6. `Agent Collaboration` 타임라인과 `Logs` 버튼에서 다음 흐름을 확인하고, 항목을 눌러 전체 payload를 팝업으로 확인한다.
    - `run.started`
-   - `planner -> engineer` 메시지
-   - `engineer -> planner` progress/result 메시지
-   - `reviewer` 검토 메시지
+   - `orchestrator -> agent` 업무 배정 메시지
+   - 필요한 경우 `planner -> engineer` 또는 `engineer -> reviewer` handoff 메시지
+   - `reviewer -> orchestrator` 검토 메시지
    - `artifact.updated`
 7. 상단 agent rail에서 agent를 눌러 현재 상태, 최근 메시지, 최근 이벤트를 확인한다.
 8. 답변 생성 중 하단 입력창이 잠기고 현재 작업 indicator와 `취소` 버튼이 보이는지 확인한다.
@@ -60,11 +60,12 @@ http://localhost:3000
 ## Session resume 확인
 
 1. 첫 실행 시 브라우저가 session id를 자동 생성한다.
-2. run을 만든 뒤 `/`로 돌아간다.
-3. 최근 run resume 카드가 표시되는지 확인한다.
-4. resume 카드에서 기존 `/runs/<runId>`로 이동한다.
-5. ChatRoom에서 선택 agent, Logs/보고서 drawer 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
-6. dev server를 재시작한 뒤 오래된 `running` run이 있으면 resume snapshot에서 stale 상태로 안전하게 표시되는지 확인한다.
+2. run을 만든 뒤 좌측 세션 목록에 대화가 표시되는지 확인한다.
+3. `새 대화`를 눌러 빈 composer로 전환한 뒤 다른 메시지를 보내 새 run을 만든다.
+4. 좌측 목록에서 기존 run과 새 run을 번갈아 선택해 메시지/로그/보고서가 전환되는지 확인한다.
+5. 완료되었거나 중단된 run의 `삭제` 버튼을 눌러 좌측 목록에서 제거되는지 확인한다.
+6. ChatRoom에서 선택 agent, Logs/보고서 drawer 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
+7. dev server를 재시작한 뒤 오래된 `running` run이 있으면 resume snapshot에서 stale 상태로 안전하게 표시되는지 확인한다.
 
 ## 예상 생성 파일
 
@@ -92,6 +93,7 @@ http://localhost:3000
 
 ```bash
 AGENTBOARD_MODE=cli \
+AGENTBOARD_ORCHESTRATOR_ADAPTER=codex \
 AGENTBOARD_PLANNER_ADAPTER=codex \
 AGENTBOARD_ENGINEER_ADAPTER=codex \
 AGENTBOARD_REVIEWER_ADAPTER=codex \
@@ -100,7 +102,7 @@ AGENTBOARD_CLI_PROMPT_MODE=stdin \
 npm run dev
 ```
 
-현재 CLI mode는 세 역할이 모두 Codex를 사용한다. AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
+현재 CLI mode는 Orchestrator와 선택된 Agent들이 Codex를 사용한다. AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
 
 CLI가 prompt를 argument로 받는 경우:
 
@@ -120,7 +122,8 @@ Mock mode에서는 Firebase 설정이 없어도 된다.
 
 - 채팅 상단 agent rail에서 2개 이상의 agent가 보인다.
 - Agent를 클릭하면 해당 agent의 현재 상태와 최근 활동이 보인다.
-- Agent 간 메시지 전달 과정이 Logs drawer에 표시된다.
+- Agent 간 메시지 전달 과정이 Agent Collaboration 타임라인과 Logs drawer에 표시된다.
+- 완료/중단된 대화를 좌측 세션 목록에서 삭제할 수 있다.
 - 답변 생성 중에는 추가 전송이 잠기고 취소 버튼이 보인다.
 - 답변 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.
 - 취소하면 run이 `stopped` 상태로 바뀌고 다시 요청을 보낼 수 있다.

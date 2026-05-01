@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentMessage, AgentState, RunEvent, RunState } from '@/lib/protocol/types';
+import type { AgentMessage, AgentRole, AgentState, RunEvent, RunState } from '@/lib/protocol/types';
 
 interface RunSnapshot {
   ok: true;
@@ -14,6 +14,7 @@ interface RunSnapshot {
 
 interface ProcessLogEntry {
   id: string;
+  messageId?: string;
   createdAt: string;
   eventType: RunEvent['type'];
   actor: string;
@@ -27,13 +28,21 @@ interface ProcessLogEntry {
 
 const CLIENT_SESSION_STORAGE_KEY = 'agentboard:clientSessionId';
 const LEGACY_CLIENT_SESSION_STORAGE_KEYS = ['agentboard.clientSessionId', 'agentboard:client-session-id'];
+const AGENT_PANEL_ORDER: AgentRole[] = ['orchestrator', 'planner', 'engineer', 'reviewer'];
 
 interface ChatRoomUiState {
-  selectedAgentId?: string;
   selectedLogId?: string | null;
   showArtifact?: boolean;
   showLogs?: boolean;
   body?: string;
+}
+
+interface ChatRoomProps {
+  initialState: RunState;
+  runId: string;
+  onNewChat?: () => void;
+  onRunUpdated?: () => void;
+  variant?: 'page' | 'embedded';
 }
 
 function chatRoomUiStateKey(runId: string): string {
@@ -46,7 +55,6 @@ function readChatRoomUiState(runId: string): ChatRoomUiState {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Partial<ChatRoomUiState>;
     return {
-      selectedAgentId: typeof parsed.selectedAgentId === 'string' ? parsed.selectedAgentId : undefined,
       selectedLogId: typeof parsed.selectedLogId === 'string' || parsed.selectedLogId === null ? parsed.selectedLogId : undefined,
       showArtifact: typeof parsed.showArtifact === 'boolean' ? parsed.showArtifact : undefined,
       showLogs: typeof parsed.showLogs === 'boolean' ? parsed.showLogs : undefined,
@@ -93,13 +101,6 @@ function actorLabel(agentMap: Map<string, AgentState>, actor: string): string {
   return agentMap.get(actor)?.displayName ?? actor;
 }
 
-function bubbleClass(message: AgentMessage): string {
-  if (message.from === 'user') return 'chat-bubble user';
-  if (message.kind === 'ack') return 'chat-bubble ack';
-  if (message.kind === 'error') return 'chat-bubble error';
-  return 'chat-bubble agent';
-}
-
 function messageHint(message: AgentMessage, agentMap: Map<string, AgentState>): string {
   const from = actorLabel(agentMap, message.from);
   const to = actorLabel(agentMap, message.to);
@@ -118,13 +119,62 @@ function isOperationalAck(message: AgentMessage, agentMap: Map<string, AgentStat
   return message.kind === 'ack' && isAgentActor(agentMap, message.from) && message.to === 'user';
 }
 
-function isTranscriptMessage(message: AgentMessage, agentMap: Map<string, AgentState>): boolean {
-  return !isAgentToAgentMessage(message, agentMap) && !isOperationalAck(message, agentMap);
-}
-
 function formatTime(value?: string): string {
   if (!value) return '-';
   return new Date(value).toLocaleTimeString();
+}
+
+function agentPanelOrder(agent: AgentState): number {
+  const index = AGENT_PANEL_ORDER.indexOf(agent.role);
+  return index < 0 ? AGENT_PANEL_ORDER.length : index;
+}
+
+function isAgentPanelMessage(message: AgentMessage, agentId: string): boolean {
+  if (message.kind === 'ack') return false;
+  if (message.from === agentId || message.to === agentId) return true;
+  if (agentId === 'orchestrator' && (message.from === 'user' || message.to === 'all' || message.to === 'user')) return true;
+  return false;
+}
+
+function isAutoContinuationMessage(message: AgentMessage): boolean {
+  return message.from === 'system' && message.to === 'orchestrator' && message.correlationId?.startsWith('continuation:') === true;
+}
+
+function isOrchestratorVerdictMessage(message: AgentMessage): boolean {
+  return message.from === 'orchestrator' && message.to === 'orchestrator' && /Orchestrator Verdict:/i.test(message.body);
+}
+
+function isFallbackOrchestratorMessage(message: AgentMessage): boolean {
+  return message.from === 'orchestrator' && /Fallback:\s*true/i.test(message.body);
+}
+
+function panelMessageClass(agentId: string, message: AgentMessage): string {
+  if (message.kind === 'error') return 'agent-panel-message error';
+  if (isFallbackOrchestratorMessage(message)) return 'agent-panel-message error';
+  if (isOrchestratorVerdictMessage(message)) return message.body.includes('incomplete')
+    ? 'agent-panel-message continuation'
+    : 'agent-panel-message outgoing';
+  if (isAutoContinuationMessage(message)) return 'agent-panel-message continuation';
+  if (message.from === 'user') return 'agent-panel-message user';
+  if (message.from === 'orchestrator' && message.to === agentId && message.kind === 'instruction') return 'agent-panel-message assignment';
+  if (message.from === agentId) return 'agent-panel-message outgoing';
+  if (message.to === agentId) return 'agent-panel-message incoming';
+  return 'agent-panel-message context';
+}
+
+function panelMessageTitle(agentId: string, message: AgentMessage, agentMap: Map<string, AgentState>): string {
+  if (isFallbackOrchestratorMessage(message) && isOrchestratorVerdictMessage(message)) return 'Orchestrator 검증 fallback';
+  if (isFallbackOrchestratorMessage(message) && message.to === 'all') return 'Orchestrator 계획 fallback';
+  if (isOrchestratorVerdictMessage(message)) return message.body.includes('incomplete')
+    ? 'Orchestrator 검증 → 미완성, 재배정'
+    : 'Orchestrator 검증 → 완료';
+  if (isAutoContinuationMessage(message)) return 'Auto continuation → Orchestrator';
+  if (message.from === 'user') return '사용자 → Orchestrator';
+  if (message.from === 'orchestrator' && message.to === 'all') return 'Orchestrator 라우팅 결정';
+  if (message.from === 'orchestrator' && message.to === agentId) return `Orchestrator → ${actorLabel(agentMap, agentId)}`;
+  if (message.from === agentId) return `${actorLabel(agentMap, agentId)} → ${actorLabel(agentMap, message.to)}`;
+  if (message.to === agentId) return `${actorLabel(agentMap, message.from)} → ${actorLabel(agentMap, agentId)}`;
+  return messageHint(message, agentMap);
 }
 
 function eventPayloadText(event: RunEvent, key: string): string | undefined {
@@ -157,13 +207,22 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   if (message) {
     const route = isAgentToAgentMessage(message, agentMap);
     const ack = isOperationalAck(message, agentMap);
+    const verdict = isOrchestratorVerdictMessage(message);
+    const fallback = isFallbackOrchestratorMessage(message);
     return {
       ...logBase(event),
-      title: ack ? `${actorLabel(agentMap, message.from)} 지시 수신 처리` : messageHint(message, agentMap),
-      detail: ack ? '내부 확인' : event.type,
+      messageId: message.id,
+      title: fallback && verdict
+        ? 'Orchestrator 검증 fallback'
+        : fallback && message.to === 'all'
+          ? 'Orchestrator 계획 fallback'
+          : verdict
+        ? (message.body.includes('incomplete') ? 'Orchestrator 검증: 미완성' : 'Orchestrator 검증: 완료')
+        : (ack ? `${actorLabel(agentMap, message.from)} 지시 수신 처리` : messageHint(message, agentMap)),
+      detail: fallback ? 'parse fallback' : verdict ? 'orchestrator.verdict' : (ack ? '내부 확인' : event.type),
       body: ack ? undefined : message.body,
       route,
-      tone: route ? 'route' : message.kind === 'error' ? 'error' : 'normal',
+      tone: fallback ? 'error' : verdict && message.body.includes('incomplete') ? 'route' : route ? 'route' : message.kind === 'error' ? 'error' : 'normal',
     };
   }
 
@@ -178,6 +237,8 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   const summary = eventPayloadText(event, 'summary');
   const interventionPreview = eventPayloadText(event, 'interventionPreview');
   const durationMs = eventPayloadText(event, 'durationMs');
+  const tmuxSession = eventPayloadText(event, 'tmuxSession');
+  const tmuxPane = eventPayloadText(event, 'tmuxPane');
 
   if (event.type === 'agent.started') {
     return {
@@ -235,6 +296,24 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
       tone: 'error',
     };
   }
+  if (event.type === 'continuation.injected' || event.type === 'continuation.max_iterations_reached') {
+    return {
+      ...logBase(event),
+      title: event.type === 'continuation.injected' ? 'auto continuation injected' : 'auto continuation stopped',
+      detail: eventPayloadText(event, 'reason') ?? eventPayloadText(event, 'messageId') ?? event.type,
+      route: false,
+      tone: event.type === 'continuation.max_iterations_reached' ? 'error' : 'route',
+    };
+  }
+  if (event.type === 'session.created' || event.type === 'session.prompt_injected' || event.type === 'session.output_captured' || event.type === 'session.restarted') {
+    return {
+      ...logBase(event),
+      title: `${actorLabel(agentMap, event.actor)} ${event.type.replace('session.', 'session ')}`,
+      detail: [tmuxSession, tmuxPane].filter(Boolean).join(' · ') || event.type,
+      route: false,
+      tone: event.type === 'session.restarted' ? 'route' : 'normal',
+    };
+  }
   if (event.type === 'artifact.updated') {
     return {
       ...logBase(event),
@@ -278,7 +357,7 @@ function runProgressLabel(runState: RunState, latestEvent?: RunEvent): string {
   return '에이전트 작업 진행 중';
 }
 
-export function ChatRoom({ initialState, runId }: { initialState: RunState; runId: string }) {
+export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant = 'page' }: ChatRoomProps) {
   const [runState, setRunState] = useState(initialState);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -286,45 +365,16 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
   const [showArtifact, setShowArtifact] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState(initialState.agents[0]?.id ?? 'planner');
   const [connected, setConnected] = useState(false);
   const [body, setBody] = useState('');
   const [controlStatus, setControlStatus] = useState('');
-  const transcriptRef = useRef<HTMLDivElement>(null);
   const restoredUiStateRef = useRef(false);
 
   const agentMap = useMemo(() => new Map(runState.agents.map((agent) => [agent.id, agent])), [runState.agents]);
-  const selectedAgent = agentMap.get(selectedAgentId) ?? runState.agents[0];
   const latestEvent = events.at(-1);
-  const selectedAgentMessages = useMemo(
-    () => messages
-      .filter((message) => message.kind !== 'ack' && (message.from === selectedAgentId || message.to === selectedAgentId))
-      .slice(-4)
-      .reverse(),
-    [messages, selectedAgentId],
-  );
-  const selectedAgentEvents = useMemo(
-    () => events
-      .filter((event) => {
-        if (event.actor === selectedAgentId) return true;
-        const message = messageFromEvent(event);
-        return message?.from === selectedAgentId || message?.to === selectedAgentId;
-      })
-      .slice(-3)
-      .reverse(),
-    [events, selectedAgentId],
-  );
-  const selectedSentCount = useMemo(
-    () => messages.filter((message) => message.from === selectedAgentId).length,
-    [messages, selectedAgentId],
-  );
-  const selectedReceivedCount = useMemo(
-    () => messages.filter((message) => message.to === selectedAgentId).length,
-    [messages, selectedAgentId],
-  );
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => isTranscriptMessage(message, agentMap)),
-    [messages, agentMap],
+  const orderedAgents = useMemo(
+    () => [...runState.agents].sort((left, right) => agentPanelOrder(left) - agentPanelOrder(right)),
+    [runState.agents],
   );
   const agentRouteCount = useMemo(
     () => messages.filter((message) => isAgentToAgentMessage(message, agentMap)).length,
@@ -335,34 +385,31 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     [events, agentMap],
   );
   const selectedLog = useMemo(
-    () => processLogs.find((log) => log.id === selectedLogId) ?? null,
+    () => processLogs.find((log) => log.id === selectedLogId || log.messageId === selectedLogId) ?? null,
     [processLogs, selectedLogId],
   );
   const runInProgress = isRunInProgress(runState.run.status);
   const progressLabel = runProgressLabel(runState, latestEvent);
+  const continuation = runState.continuation;
 
   useEffect(() => {
     const saved = readChatRoomUiState(runId);
-    if (saved.selectedAgentId && initialState.agents.some((agent) => agent.id === saved.selectedAgentId)) {
-      setSelectedAgentId(saved.selectedAgentId);
-    }
     if (saved.selectedLogId !== undefined) setSelectedLogId(saved.selectedLogId);
     if (saved.showArtifact !== undefined) setShowArtifact(saved.showArtifact);
     if (saved.showLogs !== undefined) setShowLogs(saved.showLogs);
     if (saved.body !== undefined) setBody(saved.body);
     restoredUiStateRef.current = true;
-  }, [initialState.agents, runId]);
+  }, [runId]);
 
   useEffect(() => {
     if (!restoredUiStateRef.current) return;
     writeChatRoomUiState(runId, {
-      selectedAgentId,
       selectedLogId,
       showArtifact,
       showLogs,
       body,
     });
-  }, [body, runId, selectedAgentId, selectedLogId, showArtifact, showLogs]);
+  }, [body, runId, selectedLogId, showArtifact, showLogs]);
 
   useEffect(() => {
     const clientSessionId = readClientSessionId();
@@ -395,23 +442,15 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
       setEvents((current) => (current.some((item) => item.id === event.id) ? current : [...current, event]));
       const message = messageFromEvent(event);
       if (message) setMessages((current) => upsertMessages(current, [message]));
-      if (event.type === 'artifact.updated' || event.type === 'run.completed' || event.type === 'error') void refreshSnapshot();
+      if (event.type === 'artifact.updated' || event.type === 'run.completed' || event.type === 'run.stale' || event.type === 'error') {
+        void refreshSnapshot().then(() => onRunUpdated?.());
+      }
     };
     return () => {
       clearInterval(timer);
       source.close();
     };
-  }, [runId]);
-
-  useEffect(() => {
-    transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, runState.run.status]);
-
-  useEffect(() => {
-    if (!runState.agents.some((agent) => agent.id === selectedAgentId)) {
-      setSelectedAgentId(runState.agents[0]?.id ?? 'planner');
-    }
-  }, [runState.agents, selectedAgentId]);
+  }, [onRunUpdated, runId]);
 
   useEffect(() => {
     if (!selectedLogId) return undefined;
@@ -438,6 +477,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     setBody('');
     setControlStatus('Agents가 답변을 생성하고 있습니다.');
     await refreshSnapshot();
+    onRunUpdated?.();
   }
 
   async function stopRun() {
@@ -455,11 +495,12 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
     }
     setControlStatus('작업을 취소했습니다.');
     await refreshSnapshot();
+    onRunUpdated?.();
   }
 
 
   return (
-    <main className="chat-shell">
+    <main className={`chat-shell ${variant === 'embedded' ? 'embedded' : ''}`}>
       <section className="chat-app">
         <header className="chat-topbar">
           <div>
@@ -470,6 +511,9 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           <div className="chat-topbar-actions">
             <span className={`badge ${runState.run.status}`}>{runState.run.status}</span>
             {runInProgress ? <span className="badge progress-badge active">{progressLabel}</span> : null}
+            {continuation?.enabled && continuation.iteration > 0 ? (
+              <span className="badge continuation-badge">auto-loop {continuation.iteration}/{continuation.maxIterations}</span>
+            ) : null}
             <span className={`badge ${connected ? 'completed' : ''}`}>{connected ? 'live' : 'reconnecting'}</span>
             <button className="badge badge-button" type="button" onClick={() => setShowLogs((current) => !current)}>
               {showLogs ? 'Logs 닫기' : `Logs ${processLogs.length}`}
@@ -479,7 +523,11 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
                 {showArtifact ? '보고서 닫기' : '보고서 보기'}
               </button>
             ) : null}
-            <Link className="badge" href="/">새 대화</Link>
+            {onNewChat ? (
+              <button className="badge badge-button" onClick={onNewChat} type="button">새 대화</button>
+            ) : (
+              <Link className="badge" href="/">새 대화</Link>
+            )}
           </div>
         </header>
 
@@ -569,110 +617,98 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           </div>
         ) : null}
 
-        <div className="agent-rail" aria-label="에이전트 상태">
-          {runState.agents.map((agent) => (
-            <button
-              aria-pressed={selectedAgentId === agent.id}
-              className={`agent-pill ${selectedAgentId === agent.id ? 'selected' : ''}`}
-              key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
-              type="button"
-            >
-              <strong>{agent.displayName}</strong>
-              <span>{agent.adapter} · {agent.status}</span>
-            </button>
-          ))}
-        </div>
+        <section className="agent-board-grid" aria-label="에이전트별 협업 상황판">
+          {orderedAgents.map((agent) => {
+            const panelMessages = messages.filter((message) => isAgentPanelMessage(message, agent.id)).slice(-16);
+            const latestAssignment = messages
+              .filter((message) => message.from === 'orchestrator' && message.to === agent.id && message.kind === 'instruction')
+              .at(-1);
+            const sentCount = messages.filter((message) => message.from === agent.id).length;
+            const receivedCount = messages.filter((message) => message.to === agent.id).length;
+            const isWorking = agent.status === 'thinking' || agent.status === 'waiting';
+            const session = runState.sessions?.[agent.role];
 
-        {selectedAgent ? (
-          <section className={`agent-detail-panel ${selectedAgent.status}`} aria-live="polite">
-            <div className="agent-detail-summary">
-              <span className="kicker">Selected Agent</span>
-              <h2>{selectedAgent.displayName}</h2>
-              <p>{agentSituation(selectedAgent)}</p>
-            </div>
-            <dl className="agent-detail-stats">
-              <div>
-                <dt>Status</dt>
-                <dd>{selectedAgent.status}</dd>
-              </div>
-              <div>
-                <dt>Adapter</dt>
-                <dd>{selectedAgent.adapter}</dd>
-              </div>
-              <div>
-                <dt>Sent</dt>
-                <dd>{selectedSentCount}</dd>
-              </div>
-              <div>
-                <dt>Received</dt>
-                <dd>{selectedReceivedCount}</dd>
-              </div>
-              <div>
-                <dt>Last message</dt>
-                <dd>{formatTime(selectedAgent.lastMessageAt)}</dd>
-              </div>
-            </dl>
-            <div className="agent-detail-feed">
-              <div>
-                <strong>최근 메시지</strong>
-                {selectedAgentMessages.length ? (
-                  <ul>
-                    {selectedAgentMessages.map((message) => (
-                      <li key={message.id}>
-                        <span>{messageHint(message, agentMap)} · {formatTime(message.createdAt)}</span>
+            return (
+              <article className={`agent-panel ${agent.role} ${agent.status}`} key={agent.id}>
+                <header className="agent-panel-header">
+                  <div>
+                    <span className="kicker">{agent.role}</span>
+                    <h2>{agent.displayName}</h2>
+                  </div>
+                  <span className={`agent-status-pill ${agent.status}`}>{agent.status}</span>
+                </header>
+
+                <p className="agent-panel-situation">{agentSituation(agent)}</p>
+
+                <dl className="agent-panel-meta">
+                  <div>
+                    <dt>Adapter</dt>
+                    <dd>{agent.adapter}</dd>
+                  </div>
+                  <div>
+                    <dt>Sent</dt>
+                    <dd>{sentCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Received</dt>
+                    <dd>{receivedCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Last</dt>
+                    <dd>{formatTime(agent.lastMessageAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Session</dt>
+                    <dd>{session ? `${session.transport} · ${session.status}` : 'none'}</dd>
+                  </div>
+                </dl>
+
+                {latestAssignment ? (
+                  <button
+                    className="assignment-card"
+                    onClick={() => setSelectedLogId(latestAssignment.id)}
+                    type="button"
+                  >
+                    <span>Orchestrator assigned</span>
+                    <strong>{actorLabel(agentMap, latestAssignment.to)}에게 전달된 작업</strong>
+                    <p>{latestAssignment.body}</p>
+                  </button>
+                ) : null}
+
+                <div className="agent-panel-feed" aria-label={`${agent.displayName} 메시지`}>
+                  {panelMessages.length ? (
+                    panelMessages.map((message) => (
+                      <button
+                        className={panelMessageClass(agent.id, message)}
+                        key={message.id}
+                        onClick={() => setSelectedLogId(message.id)}
+                        type="button"
+                      >
+                        <span>{formatTime(message.createdAt)} · {message.kind}</span>
+                        <strong>{panelMessageTitle(agent.id, message, agentMap)}</strong>
                         <p>{message.body}</p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p>아직 이 에이전트의 메시지가 없습니다.</p>}
-              </div>
-              <div>
-                <strong>최근 이벤트</strong>
-                {selectedAgentEvents.length ? (
-                  <ul>
-                    {selectedAgentEvents.map((event) => (
-                      <li key={event.id}>
-                        <span>{event.type} · {formatTime(event.createdAt)}</span>
-                        <p>{event.actor}</p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p>아직 이 에이전트의 이벤트가 없습니다.</p>}
-              </div>
-            </div>
-          </section>
-        ) : null}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="agent-panel-empty">
+                      <strong>아직 메시지가 없습니다.</strong>
+                      <p>{agent.role === 'orchestrator' ? '사용자 요청을 받으면 라우팅 결정과 배정 메시지가 여기에 표시됩니다.' : 'Orchestrator가 이 Agent에게 작업을 배정하면 여기에 표시됩니다.'}</p>
+                    </div>
+                  )}
 
-        <div className="chat-transcript" ref={transcriptRef}>
-          <div className="chat-bubble system">
-            <span className="bubble-meta">system · run.created</span>
-            <p>협업 대화가 시작되었습니다. 사용자에게 직접 보이는 메시지는 이 대화창에, 에이전트 간 전달 과정은 우측 상단 Logs에 표시됩니다.</p>
-          </div>
-
-          {visibleMessages.map((message) => (
-            <article className={bubbleClass(message)} key={message.id}>
-              <span className="bubble-meta">{messageHint(message, agentMap)} · {new Date(message.createdAt).toLocaleTimeString()}</span>
-              <p>{message.body}</p>
-            </article>
-          ))}
-
-          {!visibleMessages.length && messages.length ? (
-            <div className="chat-bubble system">
-              <span className="bubble-meta">system · process logs</span>
-              <p>에이전트 간 전달 과정은 우측 상단 Logs 버튼에서 확인할 수 있습니다.</p>
-            </div>
-          ) : null}
-
-          {!messages.length ? (
-            <div className="chat-bubble system typing">
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <p>에이전트 응답을 기다리는 중입니다.</p>
-            </div>
-          ) : null}
-        </div>
+                  {isWorking ? (
+                    <div className="agent-panel-working">
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <p>{agent.displayName} 작업 중</p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </section>
 
         <footer className="chat-composer-bar">
           {showArtifact && artifact ? (
@@ -686,7 +722,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
           ) : null}
           <div className="composer-target-row">
             <span className={`run-progress-indicator ${runInProgress ? 'active' : ''}`}>
-              {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : 'Agents에게 다음 요청을 보낼 수 있습니다.'}
+              {runInProgress ? progressLabel : latestEvent ? `마지막 이벤트: ${latestEvent.type}` : 'Orchestrator에게 다음 요청을 보낼 수 있습니다.'}
             </span>
             <span>{runInProgress ? '답변 생성 중에는 전송이 잠깁니다.' : 'Enter는 줄바꿈, ⌘/Ctrl + Enter는 전송'}</span>
           </div>
@@ -701,7 +737,7 @@ export function ChatRoom({ initialState, runId }: { initialState: RunState; runI
                   void sendChatMessage();
                 }
               }}
-              placeholder={runInProgress ? `${progressLabel}입니다. Logs와 에이전트 상태를 확인하거나 취소할 수 있습니다.` : 'Agents에게 요청하세요. 예: 지금 구조를 더 ChatGPT처럼 만들어줘.'}
+              placeholder={runInProgress ? `${progressLabel}입니다. 각 Agent 패널과 Logs를 확인하거나 취소할 수 있습니다.` : 'Orchestrator에게 요청하세요. 예: Planner에게 요구사항을 먼저 정리하게 해줘.'}
               value={runInProgress ? '' : body}
             />
             {runInProgress ? (

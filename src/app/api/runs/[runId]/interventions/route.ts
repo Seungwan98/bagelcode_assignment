@@ -3,7 +3,7 @@ import type { InterventionInput } from '@/lib/protocol/types';
 import { sendMessage } from '@/lib/bus/message-bus';
 import { startMockRun } from '@/lib/runner/mock-runner';
 import { startCliRun } from '@/lib/runner/cli-runner';
-import { readState, updateRunStatus } from '@/lib/store/file-store';
+import { readState, resetContinuationState, updateRunStatus } from '@/lib/store/file-store';
 
 export const runtime = 'nodejs';
 
@@ -38,6 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     kind: 'user_intervention',
     body: input.body.trim(),
   });
+  await resetContinuationState(runId);
   await updateRunStatus(runId, 'running');
   if (state.run.mode === 'cli') startCliRun(runId);
   else startMockRun(runId);

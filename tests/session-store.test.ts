@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   createRun,
+  deleteRun,
   readClientSession,
   readClientSessionSnapshot,
   readEvents,
@@ -89,4 +90,36 @@ test('stale running runs are marked safely when a session snapshot is read', asy
   assert.equal(snapshot.activeRun, undefined);
   assert.equal(snapshot.recentRuns[0]?.status, 'stale');
   assert.ok(events.some((event) => event.type === 'run.stale'));
+}));
+
+test('deleteRun removes completed run state and session references', async () => withStateDir(async () => {
+  const state = await createRun({
+    title: 'delete me',
+    brief: '삭제 가능한 완료 run',
+    mode: 'mock',
+    clientSessionId: 'client_delete_session',
+  });
+  await updateRunStatus(state.run.id, 'completed');
+
+  await deleteRun(state.run.id);
+
+  const session = await readClientSession('client_delete_session');
+  const snapshot = await readClientSessionSnapshot('client_delete_session');
+  await assert.rejects(() => readState(state.run.id), { code: 'ENOENT' });
+  assert.equal(session.activeRunId, undefined);
+  assert.deepEqual(session.recentRunIds, []);
+  assert.deepEqual(snapshot.recentRuns, []);
+}));
+
+test('deleteRun rejects active runs', async () => withStateDir(async () => {
+  const state = await createRun({
+    title: 'running delete',
+    brief: '진행 중 삭제는 막아야 한다',
+    mode: 'mock',
+    clientSessionId: 'client_active_delete_session',
+  });
+  await updateRunStatus(state.run.id, 'running');
+
+  await assert.rejects(() => deleteRun(state.run.id), /Run is in progress/);
+  assert.equal((await readState(state.run.id)).run.status, 'running');
 }));

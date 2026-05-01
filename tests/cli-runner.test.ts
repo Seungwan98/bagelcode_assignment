@@ -18,10 +18,42 @@ process.stdin.on('data', (chunk) => chunks.push(chunk));
 process.stdin.on('end', () => {
   const prompt = Buffer.concat(chunks).toString('utf8');
   const role = process.env.AGENTBOARD_AGENT_ROLE || 'unknown';
+  if (role === 'orchestrator') {
+    if (prompt.includes('[Orchestrator Verification Candidate]')) {
+      console.log(JSON.stringify({
+        status: 'complete',
+        reason: 'CLI 테스트 후보 답변이 사용자 목적을 충족합니다.',
+        userAnswer: 'CLI 테스트 지시를 반영해줘 - Orchestrator 검증 완료',
+        nextSteps: []
+      }));
+      return;
+    }
+    console.log(JSON.stringify({
+      strategy: 'dynamic-orchestrator',
+      reason: 'CLI 테스트는 Engineer와 Reviewer만 필요합니다.',
+      steps: [
+        {
+          agent: 'engineer',
+          task: 'CLI 테스트 지시를 기술 관점으로 반영한다.',
+          reason: 'adapter 실행 검증이 필요합니다.',
+          expectedOutput: 'Reviewer가 검토할 CLI 실행 결과'
+        },
+        {
+          agent: 'reviewer',
+          task: 'Engineer 결과를 최종 답변으로 정리한다.',
+          reason: '사용자-facing 답변이 필요합니다.',
+          expectedOutput: '사용자에게 전달할 최종 답변'
+        }
+      ],
+      finalResponder: 'reviewer'
+    }));
+    return;
+  }
   console.log('[' + role + '] ' + prompt);
 });
 `, 'utf8');
   process.env.AGENTBOARD_STATE_DIR = stateDir;
+  process.env.AGENTBOARD_ORCHESTRATOR_ADAPTER = 'codex';
   process.env.AGENTBOARD_PLANNER_ADAPTER = 'codex';
   process.env.AGENTBOARD_ENGINEER_ADAPTER = 'codex';
   process.env.AGENTBOARD_REVIEWER_ADAPTER = 'codex';
@@ -72,9 +104,14 @@ test('CLI runner invokes configured adapters and creates final artifact', async 
   assert.equal(completed.run.mode, 'cli');
   assert.equal(completed.run.status, 'completed');
   assert.ok(completed.agents.every((agent) => agent.adapter === 'codex'));
-  assert.ok(messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'engineer'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'reviewer'));
+  assert.ok(!messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
   assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'reviewer'));
-  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'planner'));
-  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'user' && /CLI 테스트 지시를 반영해줘/.test(message.body)));
+  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'orchestrator'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'orchestrator' && /Orchestrator Verdict: complete/.test(message.body)));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'user' && /CLI 테스트 지시를 반영해줘/.test(message.body)));
   assert.match(artifact, /CLI 테스트 지시를 반영해줘/);
+  assert.match(artifact, /Orchestrator Plan/);
+  assert.match(artifact, /Orchestrator Verdicts/);
 }));

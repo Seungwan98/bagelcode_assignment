@@ -18,6 +18,8 @@ AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, 
 - event type validation
 - state reducer
 - adapter command allowlist
+- orchestrator plan parsing과 fallback role 선택
+- prompt builder의 context 조립
 
 ### Integration test
 
@@ -30,6 +32,8 @@ AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, 
 - Intervention API가 user message를 생성하고 agent inbox로 라우팅하는지
 - Artifact writer가 최종 Markdown을 갱신하는지
 - Client session store가 active/recent run을 기록하고 stale run을 안전하게 표시하는지
+- Delete API가 완료/중단 run을 삭제하고 client session index에서 제거하는지
+- Agent Session Runtime이 Orchestrator plan, prompt builder, message bus를 사용하는지
 
 ### E2E or smoke test
 
@@ -51,13 +55,15 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 1. Message Bus unit/integration test
 2. JSONL store test
 3. Agent Session Runtime context/handoff test
-4. Mock runner integration test
-5. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
-6. Control stop API와 runner cancellation test
-7. CLI adapter command parsing / fake CLI integration test
-8. Session persistence store/API test
-9. Chat UI state persistence smoke test
-10. Firebase adapter test는 optional
+4. Orchestrator plan parser/fallback과 Prompt Builder test
+5. Mock runner integration test
+6. Intervention API가 완료된 run에서 새 답변 turn을 시작하는지 검증
+7. Control stop API와 runner cancellation test
+8. CLI adapter command parsing / fake CLI integration test
+9. Session persistence store/API test
+10. Chat UI state persistence smoke test
+11. Run delete store/API test
+12. Firebase adapter test는 optional
 
 ## 테스트 작성 규칙
 
@@ -68,6 +74,8 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
 - Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Reviewer user 답변을 검증한다.
+- Runtime 순서 변경은 Orchestrator plan parser와 fallback strategy 테스트로 먼저 고정한다.
+- Prompt 문구 변경은 stdout snapshot보다 필수 context section 존재 여부를 검증한다.
 - Browser localStorage 기반 UI state는 서버 audit state와 분리해 테스트한다.
 
 ## 예시: JSONL store test
@@ -147,13 +155,17 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] `npm install` 성공
 - [ ] `npm run dev` 성공
 - [ ] mock run 생성 가능
+- [ ] 루트 화면이 처음부터 챗봇 workspace로 표시됨
+- [ ] 좌측 세션 목록에서 run 선택/새 대화 생성 가능
+- [ ] 완료/중단된 run 삭제 가능
 - [ ] 2개 이상 agent 표시
 - [ ] agent-agent message 표시
+- [ ] Agent Collaboration 타임라인에서 agent-agent message 확인 가능
 - [ ] 진행 중 composer가 잠기고 취소 버튼 표시
 - [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
 - [ ] final artifact 표시
-- [ ] 루트 페이지에서 active/recent run resume 가능
+- [ ] 루트 페이지 좌측 목록에서 active/recent run resume 가능
 - [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, draft 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨

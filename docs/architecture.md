@@ -16,11 +16,13 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이
 사용자
   └─ Browser Chat UI
       ├─ 첫 메시지로 대화 생성
-      ├─ session resume 카드로 최근 대화 복원
+      ├─ 좌측 session 목록으로 최근 대화 복원
       ├─ Agent 상태 rail 관찰
       ├─ Agent detail panel로 현재 상태 확인
       ├─ 사용자-facing 메시지 버블 관찰
+      ├─ Agent Collaboration 타임라인으로 agent 간 대화 관찰
       ├─ Logs drawer로 agent handoff 관찰
+      ├─ 좌측 session 목록에서 완료/중단 run 삭제
       ├─ 답변 생성 중 composer 잠금과 취소 버튼
       └─ 보고서 drawer 확인
 
@@ -33,6 +35,9 @@ Next.js App
 
 Runner Process
   ├─ Agent Definition Registry
+  ├─ Agent Managers
+  ├─ Orchestrator Strategy
+  ├─ Prompt Builder
   ├─ Agent Session Runtime
   ├─ Message Bus
   ├─ Agent Adapters
@@ -60,8 +65,8 @@ Local State Store
 
 주요 구성:
 
-- `RunCreateForm`: 첫 요청 composer, 실행 모드 선택, 브라우저 session 생성/조회, 최근 run resume 카드
-- `ChatRoom`: run header, 진행 indicator, agent rail, 선택 agent detail panel, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공
+- `ChatWorkspace`: 루트(`/`)의 ChatGPT형 shell. 좌측 세션 목록, 새 대화 버튼, 실행 모드 선택, 빈 챗봇 composer, 선택 run embedding을 제공한다.
+- `ChatRoom`: run header, 진행 indicator, agent rail, 선택 agent detail panel, Agent Collaboration 타임라인, user-facing 메시지 transcript, agent handoff Logs drawer와 log detail modal, 보고서 drawer, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공한다. `/runs/:runId` 단독 페이지와 `ChatWorkspace` embedded 모드에서 함께 사용한다.
 - `ChatRoom`의 selected agent/log/report/draft 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
 
 브라우저 session state는 두 계층으로 나뉜다.
@@ -76,6 +81,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 주요 책임:
 
 - Run 생성
+- Run 삭제
 - Session snapshot 조회 및 stale run 정리
 - Run 상태 조회
 - SSE event stream 제공
@@ -89,14 +95,47 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 주요 책임:
 
 - Run 초기화
+- Agent manager 생성
 - Agent definition 조회
 - 최신 사용자 요청 turn 식별
 - `messages.jsonl` 기반 visible conversation과 agent handoff context 구성
+- Orchestrator Agent가 이번 turn의 실행 계획 JSON 생성
 - Agent별 prompt 조립과 adapter 호출
 - Agent 간 메시지 라우팅
+- 완료/중단 run 삭제 시 local state와 client session index 정리
 - 제어 명령에 따른 runner 정지
 - Event log 기록
 - 최종 artifact 작성
+
+### Agent Managers
+
+OpenCode의 `create-managers.ts`처럼 runtime이 직접 전역 객체를 붙잡지 않도록 협업 실행에 필요한 의존성을 한 번에 조립한다.
+
+현재 manager 구성:
+
+- `agentRegistry`: role별 `AgentDefinition` 조회
+- `promptBuilder`: `AgentDefinition`과 session context를 실제 adapter prompt로 변환
+- `messageBus`: Agent-to-Agent, Agent-to-User 메시지 저장
+- `orchestratorStrategy`: Orchestrator가 없거나 JSON parsing에 실패했을 때 사용할 fallback 순서 결정
+
+MVP에서는 lightweight factory인 `createAgentManagers()`를 사용한다. 이후 background session, tmux pane, approval gate 같은 기능을 붙일 때도 Runtime 자체보다 manager 구성을 확장한다.
+
+### Orchestrator Strategy
+
+오케스트레이터는 먼저 사용자 요청을 분석해 필요한 Agent와 업무를 JSON plan으로 만든다. 기본 fallback strategy는 Orchestrator가 비활성화되었거나 출력 JSON을 파싱할 수 없을 때만 사용한다.
+
+fallback strategy:
+
+```text
+enabled agents ∩ [planner, engineer, reviewer]
+```
+
+정상 흐름에서는 Orchestrator plan이 다음을 결정한다.
+
+- Reviewer만 재검토
+- Planner 생략 후 Engineer 직접 응답
+- Researcher 같은 신규 Agent 삽입
+- 사용자 승인 gate 이후 다음 Agent 실행
 
 ### Agent Session Runtime
 
@@ -106,8 +145,8 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 
 - Codex CLI stdout은 직접 Agent 간 통신 채널이 아니라 adapter 실행 결과다.
 - Runtime은 최신 `user_intervention` 이후의 Agent handoff만 이번 turn context로 본다.
-- Planner, Engineer, Reviewer는 고정 순서로 실행한다.
-- Reviewer 출력은 `reviewer -> planner` review 로그와 `reviewer -> user` 최종 답변으로 모두 저장한다.
+- Runtime은 Orchestrator plan의 `steps`에 있는 Agent만 순서대로 실행한다.
+- 최종 응답 Agent 출력은 `finalResponder -> orchestrator` review 로그와 `finalResponder -> user` 최종 답변으로 모두 저장한다.
 
 ### Message Bus
 
@@ -134,6 +173,7 @@ CLI mode 기본 role 매핑:
 
 | Role | 기본 adapter | command env |
 | --- | --- | --- |
+| `orchestrator` | `codex` | `AGENTBOARD_CODEX_CMD` |
 | `planner` | `codex` | `AGENTBOARD_CODEX_CMD` |
 | `engineer` | `codex` | `AGENTBOARD_CODEX_CMD` |
 | `reviewer` | `codex` | `AGENTBOARD_CODEX_CMD` |
@@ -143,26 +183,27 @@ CLI mode 기본 role 매핑:
 ### 1. Run 생성
 
 ```text
-Browser -> POST /api/runs -> Next.js API -> run directory 생성 -> runner 시작 -> Browser /runs/<runId> 이동
+Browser ChatWorkspace -> POST /api/runs -> Next.js API -> run directory 생성 -> runner 시작 -> workspace에서 run 선택
 ```
 
-1. 사용자가 `/`에서 과제 brief를 입력한다.
+1. 사용자가 `/`의 빈 챗봇 composer에 첫 메시지를 입력한다.
 2. `POST /api/runs`가 `run.json`, `state.json`을 만든다.
 3. 요청에 `clientSessionId`가 있으면 `_sessions/<clientSessionId>.json`의 active/recent run을 갱신한다.
 4. 서버가 mock runner를 기본 실행한다.
-5. Chat UI가 `/runs/<runId>`로 이동한다.
-6. Browser가 `GET /api/runs/<runId>/events`에 `EventSource`로 연결한다.
+5. ChatWorkspace가 새 run을 선택하고 좌측 세션 목록을 갱신한다.
+6. Embedded ChatRoom이 `GET /api/runs/<runId>/events`에 `EventSource`로 연결한다.
 
 ### 1-1. Session resume
 
 ```text
-Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> active/recent run 표시 -> /runs/<runId> 이동
+Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> 좌측 active/recent run 표시 -> run 선택
 ```
 
 1. 브라우저가 `clientSessionId`를 localStorage에서 읽거나 새로 만든다.
-2. Landing UI가 session snapshot을 조회한다.
+2. ChatWorkspace가 session snapshot을 조회한다.
 3. 서버는 missing run을 recent list에서 제거하고, 오래된 `running` run을 `stale`로 표시한다.
-4. UI는 active run 또는 recent run을 resume 카드로 보여준다.
+4. UI는 active run 또는 recent run을 좌측 세션 목록에 보여준다.
+5. active run이 있으면 자동 선택하고, 없으면 가장 최근 run을 선택한다.
 
 
 ### 1-2. ChatRoom session active 연결
@@ -171,20 +212,21 @@ Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> a
 /runs/<runId> open -> localStorage clientSessionId 확인 -> POST /api/sessions/<clientSessionId>/active-run -> _sessions index 갱신
 ```
 
-이 route는 사용자가 resume 카드가 아닌 직접 URL로 채팅방에 들어온 경우에도 현재 브라우저 session의 active run을 최신화하기 위한 보조 API다. `clientSessionId`는 인증 토큰이 아니라 로컬 resume 편의를 위한 association key다.
+이 route는 사용자가 좌측 세션 목록이 아닌 직접 URL로 채팅방에 들어온 경우에도 현재 브라우저 session의 active run을 최신화하기 위한 보조 API다. `clientSessionId`는 인증 토큰이 아니라 로컬 resume 편의를 위한 association key다.
 
 ### 2. Agent 간 협업
 
 ```text
-User request -> Agent Session Runtime -> Planner -> Message Bus -> Engineer -> Message Bus -> Reviewer -> User answer + Artifact
+User request -> Agent Session Runtime -> Orchestrator -> Message Bus assignments -> selected Agents -> Final Responder -> User answer + Artifact
 ```
 
 1. Runtime이 최신 사용자 요청과 최근 user-facing 대화를 context로 만든다.
-2. Planner adapter 출력이 `planner -> engineer` `instruction` 메시지로 저장된다.
-3. Engineer adapter 출력은 Planner handoff를 포함한 prompt로 생성되고 `engineer -> reviewer` `result` 메시지로 저장된다.
-4. Reviewer adapter 출력은 이번 turn의 모든 handoff context를 포함한 prompt로 생성된다.
-5. Reviewer 출력은 `reviewer -> planner` `review` 로그와 `reviewer -> user` `result` 답변으로 저장된다.
-6. Runner가 `artifacts/final-report.md`를 갱신한다.
+2. Orchestrator Agent가 필요한 Agent 실행 계획 JSON을 만든다.
+3. Runtime이 Orchestrator plan을 파싱하고, 각 step을 `orchestrator -> agent` `instruction` 메시지로 저장한다.
+4. Prompt Builder가 Agent별 system prompt, 최신 사용자 요청, visible conversation, handoff context, Orchestrator assignment를 조립한다.
+5. 선택된 Agent들이 plan 순서대로 실행되고 필요한 경우 다음 Agent에게 handoff 메시지를 남긴다.
+6. 최종 응답 Agent 출력은 `finalResponder -> orchestrator` `review` 로그와 `finalResponder -> user` `result` 답변으로 저장된다.
+7. Runner가 `artifacts/final-report.md`를 갱신한다.
 
 ### 3. 사용자 요청 turn
 
@@ -194,7 +236,7 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 
 1. 사용자가 ChatRoom composer에서 다음 요청을 보낸다.
 2. API가 `user_intervention` 메시지를 저장하고 run status를 `running`으로 바꾼다.
-3. Runner가 Planner → Engineer → Reviewer handoff를 남긴 뒤 Reviewer → User 답변 메시지를 생성한다.
+3. Runner가 Orchestrator plan에 따라 필요한 Agent만 실행한 뒤 Final Responder → User 답변 메시지를 생성한다.
 4. 답변 생성 중에는 composer를 disabled 처리하고 현재 작업 indicator와 `취소` 버튼을 보여준다.
 5. 사용자가 `취소`를 누르면 control API가 runner를 정지하고 run status를 `stopped`로 바꾼다. 완료 또는 중단 뒤에는 같은 composer에서 다음 요청을 다시 보낼 수 있다.
 
@@ -229,6 +271,7 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 - `GET /api/runs/:runId/events`
 - `POST /api/runs/:runId/interventions` — 새 사용자 요청 turn 시작
 - `POST /api/runs/:runId/control` — UI 취소는 `stop` 사용
+- `DELETE /api/runs/:runId` — 진행 중이 아닌 run hard delete
 
 ## ASAP 구현 순서
 

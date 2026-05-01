@@ -121,9 +121,10 @@ FIREBASE_PRIVATE_KEY=
 
 ## CLI adapter config
 
-현재 실제 CLI adapter는 Codex만 사용한다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면 Planner, Engineer, Reviewer가 모두 같은 Codex 명령을 역할별 prompt와 함께 한 번씩 실행한다. Codex stdout은 직접 Agent 간 통신이 아니라 AgentBoard session runtime이 message로 저장하고 다음 Agent prompt context에 주입하는 adapter 출력이다.
+현재 실제 CLI adapter는 Codex만 사용한다. `AGENTBOARD_MODE=cli` 또는 Chat UI에서 `cli` mode를 선택하면 Orchestrator가 먼저 Agent 실행 계획 JSON을 만들고, 선택된 Planner, Engineer, Reviewer가 같은 Codex 명령을 역할별 prompt와 함께 실행한다. Codex stdout은 직접 Agent 간 통신이 아니라 AgentBoard session runtime이 message로 저장하고 다음 Agent prompt context에 주입하는 adapter 출력이다.
 
 ```bash
+AGENTBOARD_ORCHESTRATOR_ADAPTER=codex
 AGENTBOARD_PLANNER_ADAPTER=codex
 AGENTBOARD_ENGINEER_ADAPTER=codex
 AGENTBOARD_REVIEWER_ADAPTER=codex

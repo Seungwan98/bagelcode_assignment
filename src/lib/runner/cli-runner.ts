@@ -1,18 +1,31 @@
 import type { AgentRole, RunState } from '@/lib/protocol/types';
 import { resolveCliAdapterForRole, type CliAdapterKind } from '@/lib/runner/agent-config';
 import { CliAgentAdapter, resolveCliCommandConfig } from '@/lib/runner/cli-agent-adapter';
+import { clearContinuationWatchdog, scheduleContinuationWatchdog } from '@/lib/runner/continuation-watchdog';
 import { runAgentConversation, type AgentExecutionInput } from '@/lib/runner/agent-session-runtime';
+import { resolveTmuxCommandConfig, TmuxSessionAdapter } from '@/lib/runner/tmux-session-adapter';
 import { appendEvent, readMessages, readState, updateAgentStatus, updateRunStatus, writeArtifact } from '@/lib/store/file-store';
 import { createId, nowIso } from '@/lib/utils/ids';
 
 const activeRuns = new Map<string, AbortController>();
 const timers = new Map<string, NodeJS.Timeout>();
 
+function scheduleCliContinuationIfRunning(runId: string): void {
+  void readState(runId)
+    .then((state) => {
+      if (state.run.status === 'running') {
+        scheduleContinuationWatchdog(runId, { isRunnerActive: isCliRunActive, restart: startCliRun });
+      }
+    })
+    .catch(() => undefined);
+}
+
 export function validateCliRunnerConfig(roles: AgentRole[]): { ok: true } | { ok: false; message: string } {
   try {
     for (const role of roles) {
       const adapter = resolveCliAdapterForRole(role);
       resolveCliCommandConfig(adapter);
+      if (adapter === 'tmux-codex') resolveTmuxCommandConfig();
     }
     return { ok: true };
   } catch (error) {
@@ -24,10 +37,12 @@ export function startCliRun(runId: string): void {
   if (activeRuns.has(runId)) return;
   const controller = new AbortController();
   activeRuns.set(runId, controller);
+  scheduleContinuationWatchdog(runId, { isRunnerActive: isCliRunActive, restart: startCliRun });
   const timer = setTimeout(() => {
     void runScript(runId, controller.signal).finally(() => {
       activeRuns.delete(runId);
       timers.delete(runId);
+      scheduleCliContinuationIfRunning(runId);
     });
   }, 50);
   timer.unref?.();
@@ -35,16 +50,33 @@ export function startCliRun(runId: string): void {
 }
 
 export function stopCliRun(runId: string): void {
+  clearContinuationWatchdog(runId);
   clearTimeout(timers.get(runId));
   timers.delete(runId);
   activeRuns.get(runId)?.abort();
   activeRuns.delete(runId);
+  void stopTmuxRunSessions(runId);
+}
+
+export function isCliRunActive(runId: string): boolean {
+  return activeRuns.has(runId);
 }
 
 function adapterKindForRole(state: RunState, role: AgentRole): CliAdapterKind {
   const adapter = state.agents.find((agent) => agent.role === role)?.adapter;
-  if (adapter === 'codex') return adapter;
+  if (adapter === 'codex' || adapter === 'tmux-codex') return adapter;
   return resolveCliAdapterForRole(role);
+}
+
+async function stopTmuxRunSessions(runId: string): Promise<void> {
+  try {
+    const state = await readState(runId);
+    const hasTmuxSession = Object.values(state.sessions ?? {}).some((session) => session?.adapter === 'tmux-codex');
+    if (!hasTmuxSession) return;
+    await new TmuxSessionAdapter('tmux-codex').stopRunSessions(runId);
+  } catch {
+    // Stop should be best-effort and must not break control actions.
+  }
 }
 
 async function invokeAgent(input: {
@@ -54,7 +86,9 @@ async function invokeAgent(input: {
   signal: AbortSignal;
 }): Promise<string> {
   const adapterKind = adapterKindForRole(input.state, input.execution.definition.id);
-  const adapter = new CliAgentAdapter(adapterKind);
+  const adapter = adapterKind === 'tmux-codex'
+    ? new TmuxSessionAdapter(adapterKind)
+    : new CliAgentAdapter(adapterKind);
   await updateAgentStatus(input.state.run.id, input.execution.definition.id, 'thinking');
   await appendEvent(input.state.run.id, {
     id: createId('evt'),
@@ -87,6 +121,7 @@ async function invokeAgent(input: {
       adapter: adapterKind,
       durationMs: result.durationMs,
       stdoutBytes: Buffer.byteLength(body, 'utf8'),
+      sessionInjected: adapterKind === 'tmux-codex',
       stderr: result.stderr ? result.stderr.slice(0, 4000) : undefined,
     },
     createdAt: nowIso(),
@@ -142,6 +177,21 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       '- Mode: cli',
       `- Latest User Request: ${result.context.userRequest}`,
       `- Turn User Message ID: ${result.context.turnUserMessageId}`,
+      `- Verification Iterations: ${result.verificationIterations}`,
+      '',
+      '## Orchestrator Plan',
+      '',
+      result.orchestratorPlan.steps.map((step, index) => `${index + 1}. ${step.agent}: ${step.task}`).join('\n'),
+      '',
+      '## Orchestrator Verdicts',
+      '',
+      result.orchestratorVerdicts.length
+        ? result.orchestratorVerdicts.map((verdict, index) => `${index + 1}. ${verdict.status}: ${verdict.reason}`).join('\n')
+        : 'Orchestrator 검증 없음',
+      '',
+      '## Orchestrator Output',
+      '',
+      result.outputs.orchestrator ?? '',
       '',
       '## Planner Output',
       '',
@@ -157,9 +207,9 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     ].join('\n');
     await writeArtifact(runId, finalReport, 'reviewer');
 
-    await updateAgentStatus(runId, 'planner', 'done');
-    await updateAgentStatus(runId, 'engineer', 'done');
-    await updateAgentStatus(runId, 'reviewer', 'done');
+    for (const role of Object.keys(result.outputs)) {
+      await updateAgentStatus(runId, role, 'done');
+    }
     await updateRunStatus(runId, 'completed');
     await appendEvent(runId, {
       id: createId('evt'),
@@ -169,6 +219,7 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       payload: { artifact: 'final-report.md', mode: 'cli' },
       createdAt: nowIso(),
     });
+    clearContinuationWatchdog(runId);
   } catch (error) {
     const wasStopped = signal.aborted || (await readState(runId).then((state) => state.run.status === 'stopped').catch(() => false));
     if (wasStopped) return;
@@ -184,5 +235,6 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     }).catch(() => undefined);
     await writeArtifact(runId, `# AgentBoard CLI Run Failed\n\n${message}\n`, currentRole ?? 'cli-runner').catch(() => undefined);
     await updateRunStatus(runId, 'failed').catch(() => undefined);
+    clearContinuationWatchdog(runId);
   }
 }

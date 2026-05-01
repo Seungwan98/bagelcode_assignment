@@ -8,7 +8,12 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "qa:e2e": "playwright test",
+    "qa:e2e:ui": "playwright test --ui",
+    "qa:cli-smoke": "tsx scripts/agentboard-cli-smoke.ts",
+    "qa:e2e:cli": "AGENTBOARD_E2E_MODE=cli playwright test tests/e2e/agentboard-real-adapter.spec.ts",
+    "qa:e2e:tmux": "AGENTBOARD_E2E_MODE=tmux AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex AGENTBOARD_PLANNER_ADAPTER=tmux-codex AGENTBOARD_ENGINEER_ADAPTER=tmux-codex AGENTBOARD_REVIEWER_ADAPTER=tmux-codex playwright test tests/e2e/agentboard-real-adapter.spec.ts"
   },
   "dependencies": {
     "next": "16.2.4",
@@ -16,6 +21,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "22.10.2",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.1",

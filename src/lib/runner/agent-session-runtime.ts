@@ -1,14 +1,22 @@
 import type { AgentMessage, AgentRole, RunState } from '@/lib/protocol/types';
-import { sendMessage } from '@/lib/bus/message-bus';
-import { getAgentDefinition, type AgentDefinition } from '@/lib/runner/agent-definitions';
+import { createAgentManagers, type AgentManagers } from '@/lib/runner/agent-managers';
+import type { AgentDefinition } from '@/lib/runner/agent-definitions';
+import type { AgentPromptContext } from '@/lib/runner/agent-prompt-builder';
+import {
+  formatOrchestratorAssignment,
+  formatOrchestratorPlanSummary,
+  formatOrchestratorVerdict,
+  orchestratorPlanFromVerdict,
+  orchestratorPlanFromRoles,
+  parseOrchestratorPlan,
+  parseOrchestratorVerdict,
+  type OrchestratorPlan,
+  type OrchestratorVerdict,
+  type WorkerAgentRole,
+} from '@/lib/runner/orchestrator-plan';
+export { buildAgentPrompt } from '@/lib/runner/agent-prompt-builder';
 
-export interface AgentExecutionContext {
-  runId: string;
-  turnUserMessageId: string;
-  userRequest: string;
-  visibleConversation: AgentMessage[];
-  handoffMessages: AgentMessage[];
-}
+export type AgentExecutionContext = AgentPromptContext;
 
 export interface AgentExecutionInput {
   definition: AgentDefinition;
@@ -20,12 +28,15 @@ export interface AgentConversationResult {
   context: AgentExecutionContext;
   outputs: Partial<Record<AgentRole, string>>;
   emittedMessages: AgentMessage[];
+  orchestratorPlan: OrchestratorPlan;
+  orchestratorVerdicts: OrchestratorVerdict[];
+  verificationIterations: number;
   stopped: boolean;
   userAnswer?: string;
 }
 
 const MAX_CONTEXT_MESSAGES = 12;
-const EXECUTION_ORDER: AgentRole[] = ['planner', 'engineer', 'reviewer'];
+const DEFAULT_MAX_VERIFICATION_ITERATIONS = 3;
 
 function isUserFacingMessage(message: AgentMessage): boolean {
   return message.from === 'user' || message.to === 'user';
@@ -42,31 +53,6 @@ function latestTurnStart(messages: AgentMessage[]): { message: AgentMessage | un
   return { message: undefined, index: -1 };
 }
 
-function formatMessage(message: AgentMessage): string {
-  return `- ${message.from} → ${message.to} (${message.kind}): ${message.body}`;
-}
-
-function formatMessages(messages: AgentMessage[], emptyText: string): string {
-  if (!messages.length) return emptyText;
-  return messages.map(formatMessage).join('\n');
-}
-
-function outputInstruction(definition: AgentDefinition): string {
-  if (definition.userFacing) {
-    return [
-      '사용자에게 직접 보여줄 최종 답변만 작성한다.',
-      'Planner/Engineer 결과를 검토하되 내부 로그처럼 길게 나열하지 않는다.',
-      '필요하면 한계나 다음 확인 사항을 짧게 덧붙인다.',
-    ].join('\n');
-  }
-
-  return [
-    `${definition.handoffTo ?? '다음 Agent'}에게 전달할 메시지만 작성한다.`,
-    '사용자에게 직접 말하는 형식은 피하고, 다음 Agent가 바로 활용할 수 있게 작성한다.',
-    '불필요한 인사말이나 메타 설명은 생략한다.',
-  ].join('\n');
-}
-
 export function createAgentExecutionContext(state: RunState, messages: AgentMessage[]): AgentExecutionContext {
   const turn = latestTurnStart(messages);
   const userRequest = turn.message?.body ?? state.run.brief;
@@ -81,27 +67,36 @@ export function createAgentExecutionContext(state: RunState, messages: AgentMess
   };
 }
 
-export function buildAgentPrompt(definition: AgentDefinition, context: AgentExecutionContext): string {
-  return [
-    definition.systemPrompt,
-    '',
-    '[Current User Request]',
-    context.userRequest,
-    '',
-    '[Visible Conversation Summary]',
-    formatMessages(context.visibleConversation, '아직 사용자-facing 대화가 없습니다.'),
-    '',
-    '[Agent Handoff Context]',
-    formatMessages(context.handoffMessages, '이번 turn에서 아직 전달된 Agent 메시지가 없습니다.'),
-    '',
-    '[Required Output]',
-    outputInstruction(definition),
-  ].join('\n');
+function isWorkerRole(role: AgentRole): role is WorkerAgentRole {
+  return role !== 'orchestrator';
 }
 
-function orderedRoles(state: RunState): AgentRole[] {
-  const enabled = new Set(state.agents.map((agent) => agent.role));
-  return EXECUTION_ORDER.filter((role) => enabled.has(role));
+function isOrchestratorEnabled(state: RunState): boolean {
+  return state.agents.some((agent) => agent.role === 'orchestrator');
+}
+
+function fallbackPlanFromStrategy(state: RunState, managers: AgentManagers): OrchestratorPlan {
+  const roles = managers.orchestratorStrategy.selectRoles(state).filter(isWorkerRole);
+  return orchestratorPlanFromRoles(
+    roles,
+    'Orchestrator Agent가 비활성화되어 configured strategy가 Agent 실행 순서를 선택했습니다.',
+    { strategy: managers.orchestratorStrategy.id, fallback: true },
+  );
+}
+
+function nextStepAgent(plan: OrchestratorPlan, index: number): WorkerAgentRole | undefined {
+  return plan.steps[index + 1]?.agent;
+}
+
+function handoffKindFor(definition: AgentDefinition, nextAgent: WorkerAgentRole | undefined): AgentMessage['kind'] {
+  if (!nextAgent) return definition.userFacing ? 'result' : definition.handoffKind;
+  return definition.handoffKind;
+}
+
+function maxVerificationIterations(): number {
+  const configured = Number(process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS ?? DEFAULT_MAX_VERIFICATION_ITERATIONS);
+  if (!Number.isFinite(configured) || configured < 1) return DEFAULT_MAX_VERIFICATION_ITERATIONS;
+  return Math.floor(configured);
 }
 
 export async function runAgentConversation(input: {
@@ -109,51 +104,239 @@ export async function runAgentConversation(input: {
   messages: AgentMessage[];
   invokeAgent: (input: AgentExecutionInput) => Promise<string>;
   shouldStop?: () => Promise<boolean>;
+  managers?: Partial<AgentManagers>;
 }): Promise<AgentConversationResult> {
+  const managers = createAgentManagers(input.managers);
   const context = createAgentExecutionContext(input.state, input.messages);
   const outputs: Partial<Record<AgentRole, string>> = {};
   const emittedMessages: AgentMessage[] = [];
+  const orchestratorVerdicts: OrchestratorVerdict[] = [];
   let userAnswer: string | undefined;
+  let orchestratorPlan = fallbackPlanFromStrategy(input.state, managers);
+  const orchestratorEnabled = isOrchestratorEnabled(input.state);
+  const maxIterations = maxVerificationIterations();
 
-  for (const role of orderedRoles(input.state)) {
-    if (await input.shouldStop?.()) return { context, outputs, emittedMessages, stopped: true, userAnswer };
-
-    const definition = getAgentDefinition(role);
-    const body = await input.invokeAgent({
-      definition,
-      prompt: buildAgentPrompt(definition, context),
+  function stoppedResult(stopped: true): AgentConversationResult {
+    return {
       context,
+      outputs,
+      emittedMessages,
+      orchestratorPlan,
+      orchestratorVerdicts,
+      verificationIterations: orchestratorVerdicts.length,
+      stopped,
+      userAnswer,
+    };
+  }
+
+  function recordOrchestratorOutput(raw: string): void {
+    outputs.orchestrator = outputs.orchestrator
+      ? `${outputs.orchestrator}\n\n--- Orchestrator Pass ---\n\n${raw}`
+      : raw;
+  }
+
+  async function invokeOrchestratorPlan(): Promise<OrchestratorPlan> {
+    const definition = managers.agentRegistry.get('orchestrator');
+    const rawPlan = await input.invokeAgent({
+      definition,
+      prompt: managers.promptBuilder.build(definition, {
+        ...context,
+        orchestratorTask: 'plan',
+      }),
+      context: {
+        ...context,
+        orchestratorTask: 'plan',
+      },
     });
-    outputs[role] = body;
+    recordOrchestratorOutput(rawPlan);
+    return parseOrchestratorPlan(rawPlan, input.state);
+  }
 
-    if (await input.shouldStop?.()) return { context, outputs, emittedMessages, stopped: true, userAnswer };
+  async function emitPlanMessages(plan: OrchestratorPlan): Promise<void> {
+    if (!orchestratorEnabled) return;
+    const summary = await managers.messageBus.send({
+      runId: context.runId,
+      from: 'orchestrator',
+      to: 'all',
+      kind: 'instruction',
+      body: formatOrchestratorPlanSummary(plan),
+    });
+    context.handoffMessages.push(summary);
+    emittedMessages.push(summary);
 
-    if (definition.handoffTo) {
-      const message = await sendMessage({
+    for (const step of plan.steps) {
+      const message = await managers.messageBus.send({
         runId: context.runId,
-        from: definition.id,
-        to: definition.handoffTo,
-        kind: definition.handoffKind,
-        body,
-        requiresAck: definition.requiresAck,
+        from: 'orchestrator',
+        to: step.agent,
+        kind: 'instruction',
+        body: formatOrchestratorAssignment(plan, step),
+        requiresAck: true,
       });
       context.handoffMessages.push(message);
       emittedMessages.push(message);
     }
-
-    if (definition.userFacing) {
-      const message = await sendMessage({
-        runId: context.runId,
-        from: definition.id,
-        to: 'user',
-        kind: 'result',
-        body,
-      });
-      context.visibleConversation.push(message);
-      emittedMessages.push(message);
-      userAnswer = body;
-    }
   }
 
-  return { context, outputs, emittedMessages, stopped: false, userAnswer };
+  async function executePlan(plan: OrchestratorPlan): Promise<string> {
+    let candidateAnswer = '';
+    await emitPlanMessages(plan);
+
+    for (const [index, step] of plan.steps.entries()) {
+      if (await input.shouldStop?.()) return candidateAnswer;
+
+      const definition = managers.agentRegistry.get(step.agent);
+      const body = await input.invokeAgent({
+        definition,
+        prompt: managers.promptBuilder.build(definition, context),
+        context,
+      });
+      outputs[step.agent] = body;
+
+      if (await input.shouldStop?.()) return candidateAnswer;
+
+      const nextAgent = nextStepAgent(plan, index);
+      if (nextAgent) {
+        const message = await managers.messageBus.send({
+          runId: context.runId,
+          from: definition.id,
+          to: nextAgent,
+          kind: handoffKindFor(definition, nextAgent),
+          body,
+        });
+        context.handoffMessages.push(message);
+        emittedMessages.push(message);
+      }
+
+      if (definition.id === plan.finalResponder) {
+        const reviewMessage = await managers.messageBus.send({
+          runId: context.runId,
+          from: definition.id,
+          to: 'orchestrator',
+          kind: 'review',
+          body,
+        });
+        context.handoffMessages.push(reviewMessage);
+        emittedMessages.push(reviewMessage);
+        candidateAnswer = body;
+
+        if (!orchestratorEnabled) {
+          const userMessage = await managers.messageBus.send({
+            runId: context.runId,
+            from: definition.id,
+            to: 'user',
+            kind: 'result',
+            body,
+          });
+          context.visibleConversation.push(userMessage);
+          emittedMessages.push(userMessage);
+          userAnswer = body;
+        }
+      }
+    }
+
+    return candidateAnswer;
+  }
+
+  async function invokeOrchestratorVerdict(candidateAnswer: string, iteration: number): Promise<OrchestratorVerdict> {
+    const definition = managers.agentRegistry.get('orchestrator');
+    const verificationContext: AgentExecutionContext = {
+      ...context,
+      orchestratorTask: 'verify',
+      candidateAnswer,
+      verificationIteration: iteration,
+      maxVerificationIterations: maxIterations,
+    };
+    const rawVerdict = await input.invokeAgent({
+      definition,
+      prompt: managers.promptBuilder.build(definition, verificationContext),
+      context: verificationContext,
+    });
+    recordOrchestratorOutput(rawVerdict);
+    const verdict = parseOrchestratorVerdict(rawVerdict, input.state, candidateAnswer);
+    orchestratorVerdicts.push(verdict);
+
+    const verdictMessage = await managers.messageBus.send({
+      runId: context.runId,
+      from: 'orchestrator',
+      to: 'orchestrator',
+      kind: 'review',
+      body: formatOrchestratorVerdict(verdict, iteration),
+    });
+    context.handoffMessages.push(verdictMessage);
+    emittedMessages.push(verdictMessage);
+    return verdict;
+  }
+
+  async function sendOrchestratorAnswer(body: string): Promise<void> {
+    const userMessage = await managers.messageBus.send({
+      runId: context.runId,
+      from: 'orchestrator',
+      to: 'user',
+      kind: 'result',
+      body,
+    });
+    context.visibleConversation.push(userMessage);
+    emittedMessages.push(userMessage);
+    userAnswer = body;
+  }
+
+  if (orchestratorEnabled) {
+    if (await input.shouldStop?.()) return stoppedResult(true);
+    orchestratorPlan = await invokeOrchestratorPlan();
+    if (await input.shouldStop?.()) return stoppedResult(true);
+  }
+
+  if (!orchestratorEnabled) {
+    await executePlan(orchestratorPlan);
+    if (await input.shouldStop?.()) return stoppedResult(true);
+    return {
+      context,
+      outputs,
+      emittedMessages,
+      orchestratorPlan,
+      orchestratorVerdicts,
+      verificationIterations: orchestratorVerdicts.length,
+      stopped: false,
+      userAnswer,
+    };
+  }
+
+  let currentPlan = orchestratorPlan;
+  for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
+    if (await input.shouldStop?.()) return stoppedResult(true);
+    const candidateAnswer = await executePlan(currentPlan);
+    if (await input.shouldStop?.()) return stoppedResult(true);
+
+    const verdict = await invokeOrchestratorVerdict(candidateAnswer, iteration);
+    if (await input.shouldStop?.()) return stoppedResult(true);
+
+    if (verdict.status === 'complete') {
+      await sendOrchestratorAnswer(verdict.userAnswer ?? candidateAnswer);
+      break;
+    }
+
+    if (iteration >= maxIterations) {
+      await sendOrchestratorAnswer([
+        verdict.userAnswer || candidateAnswer,
+        '',
+        `Orchestrator가 ${iteration}/${maxIterations}회 검증 후에도 미완성 요소를 감지했습니다.`,
+        `남은 리스크: ${verdict.reason}`,
+      ].filter(Boolean).join('\n'));
+      break;
+    }
+
+    currentPlan = orchestratorPlanFromVerdict(verdict, input.state, iteration + 1);
+  }
+
+  return {
+    context,
+    outputs,
+    emittedMessages,
+    orchestratorPlan,
+    orchestratorVerdicts,
+    verificationIterations: orchestratorVerdicts.length,
+    stopped: false,
+    userAnswer,
+  };
 }

@@ -102,7 +102,7 @@ ls -la .agentboard/runs/<runId>/artifacts
 cat .agentboard/runs/<runId>/artifacts/final-report.md
 ```
 
-## 최근 대화 resume 카드가 보이지 않음
+## 좌측 최근 대화 목록이 보이지 않음
 
 ### 가능한 원인
 
@@ -127,6 +127,38 @@ cat .agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
 session 파일이 없으면 새 run을 만들면 다시 생성된다. 손상된 session 파일은 로컬 상태이므로 백업 뒤 삭제하고 다시 시작할 수 있다.
+
+## 대화 삭제가 되지 않음
+
+### 가능한 원인
+
+- run이 아직 `created`, `running`, `paused` 상태다.
+- local run directory가 이미 삭제되어 session index와 불일치한다.
+- 브라우저가 오래된 session snapshot을 보고 있다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/state.json
+```
+
+진행 중인 run은 먼저 UI의 `취소` 버튼으로 `stopped` 상태로 만든 뒤 삭제한다. 이미 directory가 없으면 좌측 목록의 새로고침 또는 페이지 새로고침으로 session snapshot을 다시 읽는다.
+
+## Agent Collaboration 타임라인이 비어 있음
+
+### 가능한 원인
+
+- 아직 Orchestrator가 Agent에게 업무를 배정하기 전이다.
+- 선택된 run에 agent-to-agent 메시지가 없다.
+- Logs에는 event가 있으나 message payload가 없는 시스템 이벤트만 기록됐다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/messages.jsonl
+```
+
+`from`과 `to`가 모두 agent id인 메시지가 있으면 타임라인에 표시되어야 한다.
 
 ## 실행 중이던 run이 stale로 표시됨
 

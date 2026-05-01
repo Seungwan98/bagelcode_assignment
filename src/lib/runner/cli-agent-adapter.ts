@@ -40,10 +40,12 @@ export class CliAgentError extends Error {
 
 const COMMAND_ENV_KEYS: Record<CliAdapterKind, string> = {
   codex: 'AGENTBOARD_CODEX_CMD',
+  'tmux-codex': 'AGENTBOARD_CODEX_CMD',
 };
 
 const PROMPT_MODE_ENV_KEYS: Record<CliAdapterKind, string> = {
   codex: 'AGENTBOARD_CODEX_PROMPT_MODE',
+  'tmux-codex': 'AGENTBOARD_CODEX_PROMPT_MODE',
 };
 
 const DEFAULT_ALLOWLIST = ['codex'];

@@ -56,11 +56,16 @@ test('mock runner completes collaboration and reflects user intervention in fina
   ]);
 
   assert.equal(completed.run.status, 'completed');
-  assert.ok(messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'engineer'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'reviewer'));
+  assert.ok(!messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
   assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'reviewer'));
-  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'planner'));
-  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'user' && /README 실행성/.test(message.body)));
+  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'orchestrator'));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'orchestrator' && /Orchestrator Verdict: complete/.test(message.body)));
+  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'user' && /README 실행성/.test(message.body)));
   assert.match(artifact, /README 실행성을 최우선으로 반영해줘/);
+  assert.match(artifact, /Orchestrator Plan/);
+  assert.match(artifact, /Orchestrator Verdicts/);
 }));
 
 test('control stop cancels an in-progress mock run without completing the artifact', async () => withStateDir(async () => {
@@ -119,7 +124,7 @@ test('intervention API starts a new agent answer turn after a completed run', as
 
   const messages = await readMessages(state.run.id);
   const userMessages = messages.filter((message) => message.from === 'user');
-  const agentAnswers = messages.filter((message) => message.from === 'reviewer' && message.to === 'user');
+  const agentAnswers = messages.filter((message) => message.from === 'orchestrator' && message.to === 'user');
 
   assert.equal(userMessages.at(-1)?.body, '두 번째 질문에 답해줘');
   assert.ok(agentAnswers.at(-1)?.body.includes('두 번째 질문에 답해줘'));

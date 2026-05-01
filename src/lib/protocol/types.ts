@@ -1,8 +1,9 @@
 export type RunStatus = 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'stale';
 export type RunMode = 'mock' | 'cli';
-export type AgentRole = 'planner' | 'engineer' | 'reviewer';
+export type AgentRole = 'orchestrator' | 'planner' | 'engineer' | 'reviewer';
 export type AgentStatus = 'idle' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed';
-export type AgentAdapterKind = 'mock' | 'codex';
+export type AgentAdapterKind = 'mock' | 'codex' | 'tmux-codex';
+export type AgentSessionStatus = 'starting' | 'attached' | 'idle' | 'running' | 'dead';
 
 export type MessageKind =
   | 'instruction'
@@ -20,6 +21,12 @@ export type EventType =
   | 'run.started'
   | 'run.completed'
   | 'run.stale'
+  | 'continuation.injected'
+  | 'continuation.max_iterations_reached'
+  | 'session.created'
+  | 'session.prompt_injected'
+  | 'session.output_captured'
+  | 'session.restarted'
   | 'agent.started'
   | 'agent.status_changed'
   | 'message.sent'
@@ -88,10 +95,37 @@ export interface Artifact {
   updatedAt: string;
 }
 
+export interface ContinuationState {
+  enabled: boolean;
+  iteration: number;
+  maxIterations: number;
+  idleTimeoutMs: number;
+  lastInjectedAt?: string;
+  reason?: string;
+  completedAt?: string;
+}
+
+export interface AgentSessionHandle {
+  role: AgentRole;
+  adapter: AgentAdapterKind;
+  transport: 'tmux';
+  tmuxSession: string;
+  tmuxWindow: string;
+  tmuxPane: string;
+  command: string;
+  status: AgentSessionStatus;
+  startedAt: string;
+  updatedAt: string;
+  lastInjectedAt?: string;
+  lastCapturedAt?: string;
+}
+
 export interface RunState {
   run: Run;
   agents: AgentState[];
   latestArtifact?: Artifact;
+  continuation?: ContinuationState;
+  sessions?: Partial<Record<AgentRole, AgentSessionHandle>>;
 }
 
 export interface ClientSessionRunSummary {

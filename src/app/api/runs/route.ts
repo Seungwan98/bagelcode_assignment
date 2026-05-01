@@ -7,7 +7,7 @@ import { startCliRun, validateCliRunnerConfig } from '@/lib/runner/cli-runner';
 
 export const runtime = 'nodejs';
 
-const ALLOWED_AGENTS: AgentRole[] = ['planner', 'engineer', 'reviewer'];
+const ALLOWED_AGENTS: AgentRole[] = ['orchestrator', 'planner', 'engineer', 'reviewer'];
 
 export async function POST(request: Request) {
   const input = (await request.json()) as CreateRunInput;
