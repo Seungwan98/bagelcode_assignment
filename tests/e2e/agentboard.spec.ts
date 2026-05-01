@@ -45,8 +45,9 @@ test('새 대화에서 에이전트 협업 흐름과 로그 상세를 확인할 
   await expect(page.locator('.agent-panel.engineer')).toContainText('Engineer Agent');
   await expect(page.locator('.agent-panel.reviewer')).toContainText('Reviewer Agent');
 
-  await expect(page.getByRole('button', { name: '취소' })).toBeVisible();
-  await expect(page.getByLabel('Agents에게 보낼 메시지')).toBeDisabled();
+  await expect(page.getByRole('button', { name: '현재 작업 취소' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '개입 보내기' })).toBeVisible();
+  await expect(page.getByLabel('Agents에게 보낼 메시지')).toBeEnabled();
 
   await expect(page.locator('.chat-topbar .badge').filter({ hasText: /^completed$/ })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByLabel('Agents에게 보낼 메시지')).toBeEnabled();
@@ -55,6 +56,7 @@ test('새 대화에서 에이전트 협업 흐름과 로그 상세를 확인할 
 
   await page.getByRole('button', { name: /Logs \d+/ }).click();
   await expect(page.getByRole('heading', { name: 'Agent handoff logs' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '실행 요약 보기' })).toBeVisible();
   await expect(page.locator('.process-log-trigger').first()).toBeVisible();
   await expect(page.locator('.process-log-trigger').filter({ hasText: 'Orchestrator 검증: 완료' }).first()).toBeVisible();
 

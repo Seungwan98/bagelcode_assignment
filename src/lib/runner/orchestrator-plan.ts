@@ -1,7 +1,15 @@
-import type { AgentRole, RunState } from '@/lib/protocol/types';
+import type { AgentRole, DeliverableType, RunState } from '@/lib/protocol/types';
 import { DEFAULT_AGENT_EXECUTION_ORDER } from '@/lib/runner/orchestrator-strategy';
 
 export type WorkerAgentRole = Exclude<AgentRole, 'orchestrator'>;
+
+export interface ImplementationEvidence {
+  workspacePath?: string;
+  workspaceFiles: string[];
+  reportedChangedFiles: string[];
+  commandsRun: string[];
+  testResults: string[];
+}
 
 export interface OrchestratorStep {
   agent: WorkerAgentRole;
@@ -13,6 +21,7 @@ export interface OrchestratorStep {
 export interface OrchestratorPlan {
   strategy: string;
   reason: string;
+  deliverableType: DeliverableType;
   steps: OrchestratorStep[];
   finalResponder: WorkerAgentRole;
   fallback?: boolean;
@@ -38,6 +47,28 @@ export interface OrchestratorInterventionDecision {
 }
 
 const WORKER_ROLES: WorkerAgentRole[] = ['planner', 'engineer', 'reviewer'];
+export function inferDeliverableType(userRequest: string): DeliverableType {
+  const request = userRequest.toLowerCase();
+  const answerIntent = /계획|플랜|설명|방향|관점|방법|가이드|검토|리뷰|분석|요약|답변|알려줘|추천|plan|explain|review|analyze/.test(request);
+  const implementationTarget = /앱|프로젝트|파일|코드|컴포넌트|페이지|api|ui|기능|버그|오류|에러|테스트|어댑터|adapter|runtime|프롬프트|prompt/.test(request);
+  const implementationVerb = /구현해|개발해|수정해|고쳐|생성해|작성해|반영해|적용해|추가해|삭제해|fix|implement|build|create|add|update|delete|write/.test(request);
+
+  if (/지시.*반영|조건.*(추가|반영)|요구사항.*(추가|반영)/.test(request)) return 'answer';
+  if (answerIntent && !implementationTarget) return 'answer';
+  if (implementationVerb && implementationTarget) return 'implementation';
+  if (/실제\s*(구현|개발|수정|생성|작성)/.test(request)) return 'implementation';
+  return 'answer';
+}
+
+export function emptyImplementationEvidence(workspacePath?: string): ImplementationEvidence {
+  return {
+    workspacePath,
+    workspaceFiles: [],
+    reportedChangedFiles: [],
+    commandsRun: [],
+    testResults: [],
+  };
+}
 
 function isWorkerRole(value: unknown): value is WorkerAgentRole {
   return typeof value === 'string' && WORKER_ROLES.includes(value as WorkerAgentRole);
@@ -68,26 +99,33 @@ function defaultExpectedOutputFor(role: WorkerAgentRole): string {
   return 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트';
 }
 
-export function fallbackOrchestratorPlan(state: RunState, reason: string, parseError?: string): OrchestratorPlan {
+export function fallbackOrchestratorPlan(
+  state: RunState,
+  reason: string,
+  parseError?: string,
+  deliverableType: DeliverableType = inferDeliverableType(state.run.brief),
+): OrchestratorPlan {
   const roles = enabledWorkerRoles(state);
   const fallbackRoles: WorkerAgentRole[] = roles.length ? roles : ['reviewer'];
   return orchestratorPlanFromRoles(fallbackRoles, reason, {
     strategy: 'fallback-linear-orchestrator',
     fallback: true,
     parseError,
+    deliverableType,
   });
 }
 
 export function orchestratorPlanFromRoles(
   roles: WorkerAgentRole[],
   reason: string,
-  options: { strategy?: string; fallback?: boolean; parseError?: string } = {},
+  options: { strategy?: string; fallback?: boolean; parseError?: string; deliverableType?: DeliverableType } = {},
 ): OrchestratorPlan {
   const fallbackRoles: WorkerAgentRole[] = roles.length ? roles : ['reviewer'];
   const finalResponder = fallbackRoles[fallbackRoles.length - 1];
   return {
     strategy: options.strategy ?? 'linear-orchestrator',
     reason,
+    deliverableType: options.deliverableType ?? 'answer',
     steps: fallbackRoles.map((role) => ({
       agent: role,
       task: defaultTaskFor(role),
@@ -173,6 +211,108 @@ function normalizeText(value: unknown, fallback: string): string {
   return trimmed || fallback;
 }
 
+function normalizeDeliverableType(value: unknown, fallback: DeliverableType): DeliverableType {
+  return value === 'implementation' || value === 'answer' ? value : fallback;
+}
+
+function extractListSection(raw: string, label: string): string[] {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = raw.match(new RegExp(`${escapedLabel}\\s*[:：]\\s*([\\s\\S]*?)(?:\\n\\s*(?:changedFiles|commandsRun|testResults|remainingRisks|workspaceFiles)\\s*[:：]|$)`, 'i'));
+  if (!match?.[1]) return [];
+  return match[1]
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+    .map((line) => line.replace(/^["'`]|["'`,]$/g, '').trim())
+    .filter((line) => line.length > 0 && !/^(없음|none|n\/a|\[\])$/i.test(line));
+}
+
+function extractJsonStringList(raw: string, key: string): string[] {
+  try {
+    const parsed = parseJsonObject<Record<string, unknown>>(raw);
+    const value = parsed[key];
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function implementationEvidenceFromText(raw: string, workspacePath?: string): ImplementationEvidence {
+  return {
+    workspacePath,
+    workspaceFiles: [],
+    reportedChangedFiles: [
+      ...extractJsonStringList(raw, 'changedFiles'),
+      ...extractListSection(raw, 'changedFiles'),
+    ],
+    commandsRun: [
+      ...extractJsonStringList(raw, 'commandsRun'),
+      ...extractListSection(raw, 'commandsRun'),
+    ],
+    testResults: [
+      ...extractJsonStringList(raw, 'testResults'),
+      ...extractListSection(raw, 'testResults'),
+    ],
+  };
+}
+
+function mergeUnique(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+export function mergeImplementationEvidence(
+  left: ImplementationEvidence,
+  right: ImplementationEvidence,
+): ImplementationEvidence {
+  return {
+    workspacePath: left.workspacePath ?? right.workspacePath,
+    workspaceFiles: mergeUnique([...left.workspaceFiles, ...right.workspaceFiles]),
+    reportedChangedFiles: mergeUnique([...left.reportedChangedFiles, ...right.reportedChangedFiles]),
+    commandsRun: mergeUnique([...left.commandsRun, ...right.commandsRun]),
+    testResults: mergeUnique([...left.testResults, ...right.testResults]),
+  };
+}
+
+function hasImplementationChangedFiles(state: RunState, evidence?: ImplementationEvidence): boolean {
+  if (!evidence) return false;
+  if (evidence.workspaceFiles.length > 0) return true;
+  return state.run.mode === 'mock' && evidence.reportedChangedFiles.length > 0;
+}
+
+function hasImplementationVerification(evidence?: ImplementationEvidence): boolean {
+  return Boolean(evidence && (evidence.commandsRun.length > 0 || evidence.testResults.length > 0));
+}
+
+function implementationEvidenceSummary(evidence?: ImplementationEvidence): string {
+  if (!evidence) return '구현 증거 없음';
+  return [
+    evidence.workspacePath ? `workspace: ${evidence.workspacePath}` : undefined,
+    `workspaceFiles: ${evidence.workspaceFiles.length}`,
+    `reportedChangedFiles: ${evidence.reportedChangedFiles.length}`,
+    `commandsRun: ${evidence.commandsRun.length}`,
+    `testResults: ${evidence.testResults.length}`,
+  ].filter((line): line is string => line !== undefined).join(', ');
+}
+
+function implementationEvidenceNextStep(reason: string): OrchestratorStep {
+  return {
+    agent: 'engineer',
+    task: '실제 구현 산출물을 생성 또는 수정하고 changedFiles, commandsRun, testResults를 포함한 구현 증거를 보강한다.',
+    reason,
+    expectedOutput: '실제 변경 파일 목록, 실행한 명령, 검증 결과, 남은 리스크가 포함된 구현 결과',
+  };
+}
+
+function implementationCompletionProblem(state: RunState, evidence?: ImplementationEvidence): string | undefined {
+  if (!hasImplementationChangedFiles(state, evidence)) {
+    return `실제 workspace 변경 파일이 확인되지 않았습니다. (${implementationEvidenceSummary(evidence)})`;
+  }
+  if (!hasImplementationVerification(evidence)) {
+    return `실행 명령 또는 검증 결과가 확인되지 않았습니다. (${implementationEvidenceSummary(evidence)})`;
+  }
+  return undefined;
+}
+
 function appendFinalResponderIfNeeded(steps: OrchestratorStep[], finalResponder: WorkerAgentRole): OrchestratorStep[] {
   const existing = steps.find((step) => step.agent === finalResponder);
   if (existing) return [...steps.filter((step) => step.agent !== finalResponder), existing];
@@ -208,19 +348,27 @@ function normalizeSteps(rawSteps: unknown, state: RunState): OrchestratorStep[] 
   return steps;
 }
 
-export function parseOrchestratorPlan(raw: string, state: RunState): OrchestratorPlan {
+export function parseOrchestratorPlan(raw: string, state: RunState, userRequest = state.run.brief): OrchestratorPlan {
+  const inferredDeliverableType = inferDeliverableType(userRequest);
   try {
     const parsed = parseJsonObject<{
       strategy?: unknown;
       reason?: unknown;
+      deliverableType?: unknown;
       steps?: unknown;
       finalResponder?: unknown;
     }>(raw);
     const enabled = new Set(enabledWorkerRoles(state));
     const steps = normalizeSteps(parsed.steps, state);
+    const deliverableType = normalizeDeliverableType(parsed.deliverableType, inferredDeliverableType);
 
     if (!steps.length) {
-      return fallbackOrchestratorPlan(state, 'Orchestrator가 실행 가능한 Agent step을 만들지 못해 기본 순서를 사용합니다.');
+      return fallbackOrchestratorPlan(
+        state,
+        'Orchestrator가 실행 가능한 Agent step을 만들지 못해 기본 순서를 사용합니다.',
+        undefined,
+        deliverableType,
+      );
     }
 
     let finalResponder: WorkerAgentRole = isWorkerRole(parsed.finalResponder) && enabled.has(parsed.finalResponder)
@@ -232,6 +380,7 @@ export function parseOrchestratorPlan(raw: string, state: RunState): Orchestrato
     return {
       strategy: normalizeText(parsed.strategy, 'dynamic-orchestrator'),
       reason: normalizeText(parsed.reason, 'Orchestrator가 사용자 요청에 맞춰 Agent 실행 계획을 선택했습니다.'),
+      deliverableType,
       steps: appendFinalResponderIfNeeded(steps, finalResponder),
       finalResponder,
     };
@@ -240,11 +389,20 @@ export function parseOrchestratorPlan(raw: string, state: RunState): Orchestrato
       state,
       'Orchestrator 출력 JSON을 파싱하지 못해 기본 순서를 사용합니다.',
       error instanceof Error ? error.message : String(error),
+      inferredDeliverableType,
     );
   }
 }
 
-export function parseOrchestratorVerdict(raw: string, state: RunState, candidateAnswer: string): OrchestratorVerdict {
+export function parseOrchestratorVerdict(
+  raw: string,
+  state: RunState,
+  candidateAnswer: string,
+  options: {
+    deliverableType?: DeliverableType;
+    implementationEvidence?: ImplementationEvidence;
+  } = {},
+): OrchestratorVerdict {
   try {
     const parsed = parseJsonObject<{
       status?: unknown;
@@ -253,7 +411,25 @@ export function parseOrchestratorVerdict(raw: string, state: RunState, candidate
       nextSteps?: unknown;
     }>(raw);
     const status = parsed.status === 'incomplete' ? 'incomplete' : parsed.status === 'complete' ? 'complete' : undefined;
+    const deliverableType = options.deliverableType ?? 'answer';
+    const implementationEvidence = options.implementationEvidence
+      ? mergeImplementationEvidence(options.implementationEvidence, implementationEvidenceFromText(candidateAnswer, options.implementationEvidence.workspacePath))
+      : implementationEvidenceFromText(candidateAnswer);
     if (!status) {
+      const problem = deliverableType === 'implementation'
+        ? implementationCompletionProblem(state, implementationEvidence)
+        : undefined;
+      if (problem) {
+        const incompleteReason = `Orchestrator 검증 결과 형식과 구현 증거가 부족해 완료 처리할 수 없습니다. ${problem}`;
+        return {
+          status: 'incomplete',
+          reason: incompleteReason,
+          userAnswer: candidateAnswer,
+          nextSteps: [implementationEvidenceNextStep(incompleteReason)],
+          fallback: true,
+          parseError: 'missing status',
+        };
+      }
       return {
         status: 'complete',
         reason: 'Orchestrator 검증 결과 형식을 해석하지 못해 후보 답변을 안전하게 최종 답변으로 사용합니다.',
@@ -268,6 +444,18 @@ export function parseOrchestratorVerdict(raw: string, state: RunState, candidate
       ? 'Orchestrator가 사용자 목적을 충족한다고 판단했습니다.'
       : 'Orchestrator가 사용자 목적을 아직 충족하지 못했다고 판단했습니다.');
     if (status === 'complete') {
+      const problem = deliverableType === 'implementation'
+        ? implementationCompletionProblem(state, implementationEvidence)
+        : undefined;
+      if (problem) {
+        const incompleteReason = `implementation 요청이지만 ${problem}`;
+        return {
+          status: 'incomplete',
+          reason: incompleteReason,
+          userAnswer: typeof parsed.userAnswer === 'string' ? parsed.userAnswer.trim() : undefined,
+          nextSteps: [implementationEvidenceNextStep(incompleteReason)],
+        };
+      }
       return {
         status,
         reason,
@@ -291,6 +479,24 @@ export function parseOrchestratorVerdict(raw: string, state: RunState, candidate
       }],
     };
   } catch (error) {
+    const deliverableType = options.deliverableType ?? 'answer';
+    const implementationEvidence = options.implementationEvidence
+      ? mergeImplementationEvidence(options.implementationEvidence, implementationEvidenceFromText(candidateAnswer, options.implementationEvidence.workspacePath))
+      : implementationEvidenceFromText(candidateAnswer);
+    const problem = deliverableType === 'implementation'
+      ? implementationCompletionProblem(state, implementationEvidence)
+      : undefined;
+    if (problem) {
+      const incompleteReason = `Orchestrator 검증 JSON을 파싱하지 못했고 구현 증거도 부족해 완료 처리할 수 없습니다. ${problem}`;
+      return {
+        status: 'incomplete',
+        reason: incompleteReason,
+        userAnswer: candidateAnswer,
+        nextSteps: [implementationEvidenceNextStep(incompleteReason)],
+        fallback: true,
+        parseError: error instanceof Error ? error.message : String(error),
+      };
+    }
     return {
       status: 'complete',
       reason: 'Orchestrator 검증 JSON을 파싱하지 못해 후보 답변을 안전하게 최종 답변으로 사용합니다.',
@@ -355,6 +561,7 @@ export function orchestratorPlanFromVerdict(
   verdict: OrchestratorVerdict,
   state: RunState,
   iteration: number,
+  deliverableType: DeliverableType = 'answer',
 ): OrchestratorPlan {
   const enabled = new Set(enabledWorkerRoles(state));
   const fallbackResponder = verdict.nextSteps.at(-1)?.agent ?? (enabled.has('engineer') ? 'engineer' : 'reviewer');
@@ -362,6 +569,7 @@ export function orchestratorPlanFromVerdict(
   return {
     strategy: 'orchestrator-feedback-loop',
     reason: `Orchestrator 검증 ${iteration}회차 피드백: ${verdict.reason}`,
+    deliverableType,
     steps: appendFinalResponderIfNeeded(verdict.nextSteps, finalResponder),
     finalResponder,
   };
@@ -371,6 +579,7 @@ export function formatOrchestratorAssignment(plan: OrchestratorPlan, step: Orche
   return [
     `Orchestrator Strategy: ${plan.strategy}`,
     `Plan Reason: ${plan.reason}`,
+    `Deliverable Type: ${plan.deliverableType}`,
     '',
     `Assigned Agent: ${step.agent}`,
     `Task: ${step.task}`,
@@ -420,6 +629,7 @@ export function formatOrchestratorPlanSummary(plan: OrchestratorPlan): string {
   return [
     `Strategy: ${plan.strategy}`,
     `Reason: ${plan.reason}`,
+    `Deliverable Type: ${plan.deliverableType}`,
     `Verification Candidate Provider: ${plan.finalResponder}`,
     plan.fallback ? 'Fallback: true' : 'Fallback: false',
     plan.parseError ? `Parse Error: ${plan.parseError}` : undefined,

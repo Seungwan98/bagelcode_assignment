@@ -146,6 +146,7 @@ async function shouldStop(runId: string, signal: AbortSignal): Promise<boolean> 
 async function runScript(runId: string, signal: AbortSignal): Promise<void> {
   let currentRole: AgentRole | null = null;
   try {
+    const initialMessages = await readMessages(runId);
     await updateRunStatus(runId, 'running');
     await appendEvent(runId, {
       id: createId('evt'),
@@ -157,10 +158,9 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
     });
 
     const state = await readState(runId);
-    const messages = await readMessages(runId);
     const result = await runAgentConversation({
       state,
-      messages,
+      messages: initialMessages,
       shouldStop: () => shouldStop(runId, signal),
       invokeAgent: async (execution) => {
         currentRole = execution.definition.id;

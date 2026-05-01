@@ -62,7 +62,7 @@ interface AgentAdapter {
 `cli` run은 다음 순서로 진행한다.
 
 ```text
-Orchestrator Codex session -> selected Agent session(s) -> Orchestrator verification -> final artifact
+Orchestrator Codex session -> selected Agent session(s) -> implementation evidence collection -> Orchestrator verification -> final artifact
 ```
 
 새 adapter를 붙일 때는 다음을 지킨다.
@@ -71,6 +71,7 @@ Orchestrator Codex session -> selected Agent session(s) -> Orchestrator verifica
 - `shell: false` 실행을 기본으로 한다.
 - 사용자 입력을 shell command string에 직접 붙이지 않는다.
 - CLI output은 adapter log와 AgentBoard structured message로 나눠 저장한다.
+- implementation 요청은 `.agentboard/workspaces/<runId>/` 변경 파일과 검증 결과를 남기도록 한다.
 - 실패 시 `error` event를 남긴다.
 
 추가 설정이 필요한 CLI는 command spec에 인자를 포함하되, 실제 시연 기본값은 persistent tmux session에 맞춘다.

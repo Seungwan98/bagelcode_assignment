@@ -23,7 +23,7 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이
       ├─ Logs drawer로 agent handoff와 raw event 관찰
       ├─ 좌측 session 목록에서 완료/중단 run 삭제
       ├─ 답변 생성 중 개입 입력과 취소 버튼
-      └─ 보고서 drawer 확인
+      └─ Logs 안의 실행 요약 확인
 
 Next.js App
   ├─ Page / React Components
@@ -53,6 +53,8 @@ Local State Store
       ├─ agents/<agentId>/inbox.jsonl
       ├─ agents/user/inbox.jsonl
       └─ artifacts/final-report.md
+  ├─ .agentboard/workspaces/<runId>/
+      └─ implementation 산출물
   └─ .agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
@@ -65,13 +67,13 @@ Local State Store
 주요 구성:
 
 - `ChatWorkspace`: 루트(`/`)의 ChatGPT형 shell. 좌측 세션 목록, 새 대화 버튼, 실행 모드 선택, 빈 챗봇 composer, 선택 run embedding을 제공한다.
-- `ChatRoom`: run header, 진행 indicator, 4분할 agent chat panel, 권한 승인 카드, agent handoff Logs drawer와 log detail modal, 보고서 drawer, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공한다. `/runs/:runId` 단독 페이지와 `ChatWorkspace` embedded 모드에서 함께 사용한다.
+- `ChatRoom`: run header, 진행 indicator, 4분할 agent chat panel, 권한 승인 카드, agent handoff Logs drawer와 log detail modal, Logs 내부 실행 요약, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공한다. `/runs/:runId` 단독 페이지와 `ChatWorkspace` embedded 모드에서 함께 사용한다.
 - `ChatRoom`의 selected agent/log/report/draft 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
 
 브라우저 session state는 두 계층으로 나뉜다.
 
 - 서버 local file store: `clientSessionId`와 active/recent run association
-- 브라우저 `localStorage`: run별 선택 agent, Logs/보고서 drawer, draft 같은 UI 편의 상태
+- 브라우저 `localStorage`: run별 선택 agent, Logs/실행 요약 표시 상태, draft 같은 UI 편의 상태
 
 ### Next.js API Layer
 
@@ -101,9 +103,12 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - 실행 중 새로 들어온 사용자 개입 식별
 - `messages.jsonl` 기반 visible conversation과 agent handoff context 구성
 - Orchestrator Agent가 이번 turn의 실행 계획 JSON 생성
+- 요청 산출물을 `answer` 또는 `implementation`으로 분류
 - Agent step 사이와 verify 직전 checkpoint에서 Orchestrator가 개입을 `continue`, `restart`, `ask_user` 중 하나로 판단
 - Agent별 prompt 조립과 adapter 호출
+- implementation 요청의 run workspace 변경 파일과 검증 증거 수집
 - Agent 간 메시지 라우팅
+- implementation 요청은 실제 변경 파일/검증 결과가 없으면 complete 금지
 - 완료/중단 run 삭제 시 local state와 client session index 정리
 - 제어 명령에 따른 runner 정지
 - Event log 기록
@@ -310,7 +315,7 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 5. SSE 기반 ChatRoom transcript와 Logs drawer
 6. Agent 상태 rail
 7. 사용자 요청 composer, 진행 indicator, 취소 컨트롤
-8. 보고서 drawer
+8. Logs 내부 실행 요약
 9. Browser session resume와 ChatRoom UI state persistence
 10. README 실행 흐름
 11. Optional CLI/tmux adapter
@@ -320,4 +325,4 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 - Mock mode는 항상 외부 key 없이 실행 가능해야 한다.
 - Real Codex 실행은 `tmux-codex`를 우선하고, adapter command는 allowlist 기반으로 실행하며 shell 문자열 조합을 피한다.
 - 실제 secret은 `.env.local`이나 ignored local config에만 둔다.
-- `.agentboard/runs/`와 Xcode/Swift `DerivedData`, `.noindex`, `xcuserdata`는 생성 상태이므로 commit하지 않는다.
+- `.agentboard/runs/`, build output, dependency folders, local logs는 생성 상태이므로 commit하지 않는다.

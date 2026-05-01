@@ -69,7 +69,7 @@ This repository may start without git initialized. Commit rules are summarized i
 Minimum commit hygiene:
 
 1. Inspect changes before committing: `git status --short && git diff --check`.
-2. Do not commit generated run state, local secret config, service accounts, `.env.local`, build artifacts, Xcode `DerivedData`/`.noindex` caches, or `xcuserdata`.
+2. Do not commit generated run state, local secret config, service accounts, `.env.local`, build artifacts, dependency folders, or runtime logs.
 3. Keep commits small and evidence-focused.
 4. Use Korean-first commit messages with one English type tag, e.g. `[Feat] 첫 번째 커밋`.
 5. Use English only for the tag, commands, file paths, package names, and unavoidable technical identifiers.
@@ -81,5 +81,5 @@ Before reporting completion, verify:
 - Required docs exist.
 - Local secret config paths are ignored.
 - Templates do not contain real secrets.
-- `.gitignore` covers generated run state, build output, dependency folders, secret files, and Xcode/Swift generated artifacts.
+- `.gitignore` covers generated run state, build output, dependency folders, secret files, and local runtime logs.
 - Any implementation later added can be run from README in mock mode.

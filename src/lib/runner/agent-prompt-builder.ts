@@ -1,5 +1,7 @@
 import type { AgentMessage } from '@/lib/protocol/types';
 import type { AgentDefinition } from '@/lib/runner/agent-definitions';
+import type { DeliverableType } from '@/lib/protocol/types';
+import type { ImplementationEvidence } from '@/lib/runner/orchestrator-plan';
 
 export interface AgentPromptContext {
   runId: string;
@@ -8,6 +10,9 @@ export interface AgentPromptContext {
   visibleConversation: AgentMessage[];
   handoffMessages: AgentMessage[];
   orchestratorTask?: 'plan' | 'verify' | 'intervention';
+  deliverableType?: DeliverableType;
+  implementationWorkspace?: string;
+  implementationEvidence?: ImplementationEvidence;
   candidateAnswer?: string;
   verificationIteration?: number;
   maxVerificationIterations?: number;
@@ -27,12 +32,33 @@ function formatMessages(messages: AgentMessage[], emptyText: string): string {
   return messages.map(formatMessage).join('\n');
 }
 
+function formatList(values: string[], emptyText: string): string {
+  if (!values.length) return emptyText;
+  return values.map((value) => `- ${value}`).join('\n');
+}
+
+function formatImplementationEvidence(evidence: ImplementationEvidence | undefined): string {
+  if (!evidence) return '아직 수집된 구현 증거가 없습니다.';
+  return [
+    `workspace: ${evidence.workspacePath ?? '(unknown)'}`,
+    'workspaceFiles:',
+    formatList(evidence.workspaceFiles, '- 없음'),
+    'reportedChangedFiles:',
+    formatList(evidence.reportedChangedFiles, '- 없음'),
+    'commandsRun:',
+    formatList(evidence.commandsRun, '- 없음'),
+    'testResults:',
+    formatList(evidence.testResults, '- 없음'),
+  ].join('\n');
+}
+
 function outputInstruction(definition: AgentDefinition): string {
   if (definition.id === 'orchestrator') {
     return [
       'orchestratorTask가 plan이면 사용자에게 직접 답하지 말고 AgentBoard 내부 실행 계획 JSON만 작성한다.',
       'orchestratorTask가 verify이면 후보 결과와 handoff context를 검증하고, 완료 시 Orchestrator 명의의 최종 사용자 답변을 verdict JSON userAnswer에 직접 작성한다.',
       'orchestratorTask가 intervention이면 진행 중 들어온 사용자 개입을 현재 flow에 어떻게 반영할지 decision JSON만 작성한다.',
+      'deliverableType이 implementation인 verify에서는 실제 workspace 변경 파일과 검증 증거가 없으면 complete를 출력하지 않는다.',
       '반드시 하나의 JSON object만 출력한다. JSON 외의 설명, 마크다운, 코드블록은 출력하지 않는다.',
       '알 수 없는 값 대신 가장 가까운 허용값을 사용한다.',
     ].join('\n');
@@ -49,6 +75,7 @@ function outputInstruction(definition: AgentDefinition): string {
 
   return [
     'Orchestrator가 배정한 업무를 수행하고, 다음 Agent 또는 Orchestrator가 바로 활용할 수 있는 결과만 작성한다.',
+    'Deliverable Type이 implementation이면 설명으로 끝내지 말고 지정된 workspace에 실제 파일을 생성/수정한 뒤 changedFiles, commandsRun, testResults, remainingRisks를 결과에 포함한다.',
     '사용자에게 직접 말하는 형식은 피한다.',
     '불필요한 인사말이나 메타 설명은 생략한다.',
   ].join('\n');
@@ -66,6 +93,7 @@ export function buildAgentPrompt(definition: AgentDefinition, context: AgentProm
         '{',
         '  "strategy": "dynamic-orchestrator",',
         '  "reason": "이번 요청을 이렇게 라우팅하는 이유",',
+        '  "deliverableType": "answer" | "implementation",',
         '  "steps": [',
         '    {',
         '      "agent": "planner" | "engineer" | "reviewer",',
@@ -77,9 +105,13 @@ export function buildAgentPrompt(definition: AgentDefinition, context: AgentProm
         '  "finalResponder": "engineer"',
         '}',
         '',
+        'deliverableType 규칙: 설명/분석/계획/검토는 "answer", 실제 파일 생성/수정/개발/구현 요청은 "implementation"이다.',
         'finalResponder는 사용자에게 직접 답하는 Agent가 아니라 Orchestrator가 verify할 후보 결과를 마지막으로 제공하는 Agent다.',
         'Reviewer는 일반 답변 작성자가 아니라 품질 검토가 필요할 때만 사용한다.',
       ].join('\n') : undefined,
+      !isPlanTask ? '[Deliverable Type]' : undefined,
+      !isPlanTask ? context.deliverableType ?? 'answer' : undefined,
+      !isPlanTask ? '' : undefined,
       isPlanTask ? '' : undefined,
       context.orchestratorTask === 'verify' ? '[Orchestrator Verification Candidate]' : undefined,
       context.orchestratorTask === 'verify' ? context.candidateAnswer ?? '(후보 답변 없음)' : undefined,
@@ -87,6 +119,11 @@ export function buildAgentPrompt(definition: AgentDefinition, context: AgentProm
       context.orchestratorTask === 'verify' ? '[Verification Iteration]' : undefined,
       context.orchestratorTask === 'verify'
         ? `${context.verificationIteration ?? 1}/${context.maxVerificationIterations ?? 3}`
+        : undefined,
+      context.orchestratorTask === 'verify' ? '' : undefined,
+      context.orchestratorTask === 'verify' ? '[Implementation Evidence]' : undefined,
+      context.orchestratorTask === 'verify'
+        ? formatImplementationEvidence(context.implementationEvidence)
         : undefined,
       context.orchestratorTask === 'verify' ? '' : undefined,
       context.orchestratorTask === 'verify' ? '[Required Verdict JSON]' : undefined,
@@ -107,6 +144,7 @@ export function buildAgentPrompt(definition: AgentDefinition, context: AgentProm
         '',
         'complete 규칙: nextSteps는 빈 배열이어야 한다.',
         'incomplete 규칙: nextSteps는 최소 1개 이상이어야 한다.',
+        'implementation complete 규칙: 실제 workspaceFiles 또는 변경 파일 증거, commandsRun/testResults가 모두 있어야 한다.',
       ].join('\n') : undefined,
       context.orchestratorTask === 'verify' ? '' : undefined,
       context.orchestratorTask === 'intervention' ? '[Pending User Interventions]' : undefined,
@@ -146,6 +184,24 @@ export function buildAgentPrompt(definition: AgentDefinition, context: AgentProm
     context.userRequest,
     '',
     ...orchestratorContext,
+    definition.id !== 'orchestrator' ? '[Deliverable Type]' : undefined,
+    definition.id !== 'orchestrator' ? context.deliverableType ?? 'answer' : undefined,
+    definition.id !== 'orchestrator' ? '' : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation' ? '[Implementation Workspace]' : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation'
+      ? context.implementationWorkspace ?? `.agentboard/workspaces/${context.runId}`
+      : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation' ? '' : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation' ? '[Implementation Requirements]' : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation'
+      ? [
+        '1. 지정된 workspace 안에 실제 산출물 파일을 생성하거나 수정한다.',
+        '2. 설명만 작성하거나 코드블록만 제시하고 끝내지 않는다.',
+        '3. 결과 마지막에 changedFiles, commandsRun, testResults, remainingRisks 섹션을 반드시 포함한다.',
+        '4. 실행하지 못한 검증은 testResults에 미실행 사유를 명시한다.',
+      ].join('\n')
+      : undefined,
+    definition.id !== 'orchestrator' && context.deliverableType === 'implementation' ? '' : undefined,
     '',
     '[Visible Conversation Summary]',
     formatMessages(context.visibleConversation, '아직 사용자-facing 대화가 없습니다.'),

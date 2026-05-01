@@ -90,6 +90,7 @@ tmux 관련 값:
 | `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` | `30000` | `AGENTBOARD_DONE`이 누락된 경우 idle prompt 기반 fallback을 적용하기 전 동일 출력이 안정적으로 유지되어야 하는 시간. 스트리밍 중 부분 출력이 JSON parse fallback으로 오인되는 것을 막는다. |
 | `AGENTBOARD_TMUX_CAPTURE_HISTORY_LINES` | `400` | 완료 marker 탐색에 사용할 pane history line 수 |
 | `AGENTBOARD_TMUX_CAPTURE_DELAY_MS` | `1000` | prompt 주입 직후 첫 capture 전 대기 시간 |
+| `AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS` | `3` | Orchestrator가 incomplete verdict 후 다시 Agent에게 보완을 맡길 최대 횟수 |
 
 완료 통보 기준:
 
@@ -145,6 +146,14 @@ MVP local state root:
 ```
 
 `.agentboard/`는 commit하지 않는다.
+
+실제 구현 요청(`deliverableType=implementation`)은 기본적으로 run별 workspace를 사용한다.
+
+```text
+.agentboard/workspaces/<runId>/
+```
+
+Orchestrator는 “앱 개발/파일 수정/코드 구현”처럼 실제 산출물을 요구하는 요청을 implementation으로 분류하고, workspace 변경 파일과 검증 결과가 없으면 complete로 처리하지 않는다.
 
 ## Session persistence config
 

@@ -369,6 +369,14 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
       { agent: 'engineer', task: '핵심 답변을 작성한다.', reason: '기술 관점이 필요합니다.', expectedOutput: '답변 후보' },
     ],
   }), state);
+  const implementationPlan = parseOrchestratorPlan(JSON.stringify({
+    strategy: 'implementation',
+    reason: '실제 개발 요청입니다.',
+    steps: [
+      { agent: 'engineer', task: '앱 파일을 생성한다.', reason: '실제 구현 필요', expectedOutput: '구현 산출물' },
+    ],
+    finalResponder: 'engineer',
+  }), state, 'Swift 앱 개발해줘');
   const hardWrappedPlan = parseOrchestratorPlan([
     '{',
     '  "strategy": "dynamic-orchestrator",',
@@ -391,6 +399,8 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
   assert.deepEqual(plan.steps.map((step) => step.agent), ['engineer', 'reviewer']);
   assert.deepEqual(engineerOnlyPlan.steps.map((step) => step.agent), ['engineer']);
   assert.equal(engineerOnlyPlan.finalResponder, 'engineer');
+  assert.equal(engineerOnlyPlan.deliverableType, 'answer');
+  assert.equal(implementationPlan.deliverableType, 'implementation');
   assert.equal(hardWrappedPlan.strategy, 'dynamic-orchestrator');
   assert.deepEqual(hardWrappedPlan.steps.map((step) => step.agent), ['engineer']);
   assert.match(hardWrappedPlan.reason, /기술 구현이 필요 하지 않으므로/);
@@ -399,6 +409,42 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
   assert.equal(fallbackVerdict.status, 'complete');
   assert.equal(fallbackVerdict.fallback, true);
   assert.match(fallbackVerdict.parseError ?? '', /JSON object/);
+}));
+
+test('implementation deliverables require changed files and verification evidence', async () => withStateDir(async () => {
+  const state = await createRun({ title: 'implementation parser', brief: 'Swift 앱 개발해줘', mode: 'cli' });
+  const rawCompleteVerdict = JSON.stringify({
+    status: 'complete',
+    reason: '설명은 충분합니다.',
+    userAnswer: '완료했습니다.',
+    nextSteps: [],
+  });
+
+  const missingEvidence = parseOrchestratorVerdict(rawCompleteVerdict, state, '설계와 코드 예시만 작성했습니다.', {
+    deliverableType: 'implementation',
+    implementationEvidence: {
+      workspacePath: '/tmp/agentboard-workspace',
+      workspaceFiles: [],
+      reportedChangedFiles: ['App.swift'],
+      commandsRun: ['swift test'],
+      testResults: ['passed'],
+    },
+  });
+  const completeWithEvidence = parseOrchestratorVerdict(rawCompleteVerdict, state, '실제 파일 생성 완료', {
+    deliverableType: 'implementation',
+    implementationEvidence: {
+      workspacePath: '/tmp/agentboard-workspace',
+      workspaceFiles: ['App.swift'],
+      reportedChangedFiles: ['App.swift'],
+      commandsRun: ['swift test'],
+      testResults: ['passed'],
+    },
+  });
+
+  assert.equal(missingEvidence.status, 'incomplete');
+  assert.match(missingEvidence.reason, /workspace 변경 파일/);
+  assert.deepEqual(missingEvidence.nextSteps.map((step) => step.agent), ['engineer']);
+  assert.equal(completeWithEvidence.status, 'complete');
 }));
 
 test('agent conversation runtime returns partial answer with risk after max incomplete verdicts', async () => withStateDir(async () => {

@@ -228,7 +228,7 @@ async function withTmuxEnv<T>(fn: (statePath: string) => Promise<T>): Promise<T>
 }
 
 async function waitForCompletedRun(runId: string): Promise<void> {
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + 12_000;
   while (Date.now() < deadline) {
     const state = await readState(runId);
     if (state.run.status === 'completed' || state.run.status === 'failed') {

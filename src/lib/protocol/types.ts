@@ -4,6 +4,7 @@ export type AgentRole = 'orchestrator' | 'planner' | 'engineer' | 'reviewer';
 export type AgentStatus = 'idle' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'failed';
 export type AgentAdapterKind = 'mock' | 'codex' | 'tmux-codex';
 export type AgentSessionStatus = 'starting' | 'attached' | 'idle' | 'running' | 'completed' | 'blocked' | 'dead';
+export type DeliverableType = 'answer' | 'implementation';
 
 export type MessageKind =
   | 'instruction'

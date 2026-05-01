@@ -223,6 +223,13 @@ pre {
 .logs-drawer-header h2 { margin: 3px 0 4px; font-size: 1.15rem; }
 .logs-drawer-header p { margin: 0; font-size: .86rem; }
 .logs-drawer-header button { padding: .48rem .78rem; font-size: .82rem; }
+.logs-drawer-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .process-log-list {
   display: grid;
   align-content: start;

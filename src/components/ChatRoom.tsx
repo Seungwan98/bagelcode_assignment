@@ -427,7 +427,7 @@ function processLogFromEvent(event: RunEvent, agentMap: Map<string, AgentState>)
   if (event.type === 'artifact.updated') {
     return {
       ...logBase(event),
-      title: 'artifact updated',
+      title: '실행 요약 갱신',
       detail: artifact ?? 'final-report.md',
       route: false,
       tone: 'normal',
@@ -811,11 +811,6 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
             <button className="badge badge-button" type="button" onClick={() => setShowLogs((current) => !current)}>
               {showLogs ? 'Logs 닫기' : `Logs ${processLogs.length}`}
             </button>
-            {artifact ? (
-              <button className="badge badge-button" type="button" onClick={() => setShowArtifact((current) => !current)}>
-                {showArtifact ? '보고서 닫기' : '보고서 보기'}
-              </button>
-            ) : null}
             {onNewChat ? (
               <button className="badge badge-button" onClick={onNewChat} type="button">새 대화</button>
             ) : (
@@ -832,7 +827,14 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
                 <h2>Agent handoff logs</h2>
                 <p>에이전트 간 전달 {agentRouteCount}건 · 전체 이벤트 {processLogs.length}건</p>
               </div>
-              <button className="secondary" type="button" onClick={() => setShowLogs(false)}>닫기</button>
+              <div className="logs-drawer-actions">
+                {artifact ? (
+                  <button className="secondary" type="button" onClick={() => setShowArtifact((current) => !current)}>
+                    {showArtifact ? '실행 요약 닫기' : '실행 요약 보기'}
+                  </button>
+                ) : null}
+                <button className="secondary" type="button" onClick={() => setShowLogs(false)}>닫기</button>
+              </div>
             </div>
             {processLogs.length ? (
               <ol className="process-log-list">
@@ -940,9 +942,9 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
 
         <footer className="chat-composer-bar">
           {showArtifact && artifact ? (
-            <section className="artifact-drawer" aria-label="최종 보고서">
+            <section className="artifact-drawer" aria-label="실행 요약">
               <div className="artifact-drawer-header">
-                <span>final-report.md</span>
+                <span>실행 요약 · final-report.md</span>
                 <button className="secondary" type="button" onClick={() => setShowArtifact(false)}>닫기</button>
               </div>
               <pre>{artifact}</pre>

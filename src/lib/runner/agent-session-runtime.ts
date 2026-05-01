@@ -1,23 +1,29 @@
 import type { AgentMessage, AgentRole, RunState } from '@/lib/protocol/types';
+import { readdir, stat } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { createAgentManagers, type AgentManagers } from '@/lib/runner/agent-managers';
 import type { AgentDefinition } from '@/lib/runner/agent-definitions';
 import type { AgentPromptContext } from '@/lib/runner/agent-prompt-builder';
 import {
+  emptyImplementationEvidence,
   formatOrchestratorInterventionDecision,
   formatOrchestratorAssignment,
   formatOrchestratorPlanSummary,
   formatOrchestratorVerdict,
+  implementationEvidenceFromText,
+  inferDeliverableType,
   orchestratorPlanFromVerdict,
   orchestratorPlanFromRoles,
   parseOrchestratorInterventionDecision,
   parseOrchestratorPlan,
   parseOrchestratorVerdict,
+  mergeImplementationEvidence,
   type OrchestratorInterventionDecision,
   type OrchestratorPlan,
   type OrchestratorVerdict,
   type WorkerAgentRole,
 } from '@/lib/runner/orchestrator-plan';
-import { appendEvent, readMessages, updateRunStatus } from '@/lib/store/file-store';
+import { appendEvent, implementationWorkspaceDir, readMessages, updateRunStatus } from '@/lib/store/file-store';
 import { createId, nowIso } from '@/lib/utils/ids';
 export { buildAgentPrompt } from '@/lib/runner/agent-prompt-builder';
 
@@ -42,8 +48,9 @@ export interface AgentConversationResult {
 
 const MAX_CONTEXT_MESSAGES = 12;
 const DEFAULT_MAX_VERIFICATION_ITERATIONS = 3;
+const MAX_IMPLEMENTATION_WORKSPACE_FILES = 80;
 
-type InterventionDecisionOutcome = 'continue' | 'restart' | 'paused';
+type InterventionDecisionOutcome = 'continue' | 'continue_with_intervention' | 'restart' | 'paused';
 
 function isUserFacingMessage(message: AgentMessage): boolean {
   return message.from === 'user' || message.to === 'user';
@@ -87,7 +94,7 @@ function fallbackPlanFromStrategy(state: RunState, managers: AgentManagers): Orc
   return orchestratorPlanFromRoles(
     roles,
     'Orchestrator Agent가 비활성화되어 configured strategy가 Agent 실행 순서를 선택했습니다.',
-    { strategy: managers.orchestratorStrategy.id, fallback: true },
+    { strategy: managers.orchestratorStrategy.id, fallback: true, deliverableType: inferDeliverableType(state.run.brief) },
   );
 }
 
@@ -99,6 +106,32 @@ function maxVerificationIterations(): number {
   const configured = Number(process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS ?? DEFAULT_MAX_VERIFICATION_ITERATIONS);
   if (!Number.isFinite(configured) || configured < 1) return DEFAULT_MAX_VERIFICATION_ITERATIONS;
   return Math.floor(configured);
+}
+
+async function listWorkspaceFiles(root: string, current = root, files: string[] = []): Promise<string[]> {
+  if (files.length >= MAX_IMPLEMENTATION_WORKSPACE_FILES) return files;
+  let entries: Awaited<ReturnType<typeof readdir>>;
+  try {
+    entries = await readdir(current, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return files;
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (files.length >= MAX_IMPLEMENTATION_WORKSPACE_FILES) break;
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.next') continue;
+    const path = join(current, entry.name);
+    if (entry.isDirectory()) {
+      await listWorkspaceFiles(root, path, files);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const fileStat = await stat(path).catch(() => undefined);
+    if (!fileStat?.isFile()) continue;
+    files.push(relative(root, path));
+  }
+  return files;
 }
 
 export async function runAgentConversation(input: {
@@ -113,6 +146,7 @@ export async function runAgentConversation(input: {
   const outputs: Partial<Record<AgentRole, string>> = {};
   const emittedMessages: AgentMessage[] = [];
   const orchestratorVerdicts: OrchestratorVerdict[] = [];
+  const implementationWorkspace = implementationWorkspaceDir(context.runId);
   const processedInterventionIds = new Set(
     input.messages.filter((message) => message.kind === 'user_intervention').map((message) => message.id),
   );
@@ -154,7 +188,25 @@ export async function runAgentConversation(input: {
       },
     });
     recordOrchestratorOutput(rawPlan);
-    return parseOrchestratorPlan(rawPlan, input.state);
+    return parseOrchestratorPlan(rawPlan, input.state, context.userRequest);
+  }
+
+  async function collectImplementationEvidence(candidateAnswer: string) {
+    const workspaceFiles = await listWorkspaceFiles(implementationWorkspace);
+    const handoffEvidenceText = context.handoffMessages
+      .filter((message) => message.from !== 'orchestrator')
+      .map((message) => message.body)
+      .join('\n\n');
+    return mergeImplementationEvidence(
+      mergeImplementationEvidence(
+        {
+          ...emptyImplementationEvidence(implementationWorkspace),
+          workspaceFiles,
+        },
+        implementationEvidenceFromText(handoffEvidenceText, implementationWorkspace),
+      ),
+      implementationEvidenceFromText(candidateAnswer, implementationWorkspace),
+    );
   }
 
   async function readPendingRuntimeInterventions(): Promise<AgentMessage[]> {
@@ -198,11 +250,14 @@ export async function runAgentConversation(input: {
     pendingInterventions: AgentMessage[];
     currentAgent: AgentRole;
     nextAgent?: WorkerAgentRole;
+    plan: OrchestratorPlan;
   }): Promise<OrchestratorInterventionDecision> {
     const definition = managers.agentRegistry.get('orchestrator');
     const decisionContext: AgentExecutionContext = {
       ...context,
       orchestratorTask: 'intervention',
+      deliverableType: inputDecision.plan.deliverableType,
+      implementationWorkspace,
       pendingInterventions: inputDecision.pendingInterventions,
       interventionCheckpoint: {
         currentAgent: inputDecision.currentAgent,
@@ -235,6 +290,7 @@ export async function runAgentConversation(input: {
       pendingInterventions,
       currentAgent: inputDecision.currentAgent,
       nextAgent: inputDecision.nextAgent,
+      plan: inputDecision.plan,
     });
     const decisionBody = formatOrchestratorInterventionDecision(decision, pendingInterventions);
 
@@ -276,7 +332,7 @@ export async function runAgentConversation(input: {
       return 'restart';
     }
 
-    return 'continue';
+    return 'continue_with_intervention';
   }
 
   async function emitPlanMessages(plan: OrchestratorPlan): Promise<void> {
@@ -325,10 +381,15 @@ export async function runAgentConversation(input: {
       if (await input.shouldStop?.()) return { candidateAnswer, restarted: false, paused: false };
 
       const definition = managers.agentRegistry.get(step.agent);
+      const stepContext: AgentExecutionContext = {
+        ...context,
+        deliverableType: plan.deliverableType,
+        implementationWorkspace,
+      };
       const body = await input.invokeAgent({
         definition,
-        prompt: managers.promptBuilder.build(definition, context),
-        context,
+        prompt: managers.promptBuilder.build(definition, stepContext),
+        context: stepContext,
       });
       outputs[step.agent] = body;
 
@@ -385,11 +446,19 @@ export async function runAgentConversation(input: {
     return { candidateAnswer, restarted: false, paused: false };
   }
 
-  async function invokeOrchestratorVerdict(candidateAnswer: string, iteration: number): Promise<OrchestratorVerdict> {
+  async function invokeOrchestratorVerdict(
+    candidateAnswer: string,
+    iteration: number,
+    plan: OrchestratorPlan,
+  ): Promise<OrchestratorVerdict> {
     const definition = managers.agentRegistry.get('orchestrator');
+    const implementationEvidence = await collectImplementationEvidence(candidateAnswer);
     const verificationContext: AgentExecutionContext = {
       ...context,
       orchestratorTask: 'verify',
+      deliverableType: plan.deliverableType,
+      implementationWorkspace,
+      implementationEvidence,
       candidateAnswer,
       verificationIteration: iteration,
       maxVerificationIterations: maxIterations,
@@ -400,7 +469,10 @@ export async function runAgentConversation(input: {
       context: verificationContext,
     });
     recordOrchestratorOutput(rawVerdict);
-    const verdict = parseOrchestratorVerdict(rawVerdict, input.state, candidateAnswer);
+    const verdict = parseOrchestratorVerdict(rawVerdict, input.state, candidateAnswer, {
+      deliverableType: plan.deliverableType,
+      implementationEvidence,
+    });
     orchestratorVerdicts.push(verdict);
 
     const verdictMessage = await managers.messageBus.send({
@@ -478,8 +550,31 @@ export async function runAgentConversation(input: {
     const { candidateAnswer } = execution;
     if (await input.shouldStop?.()) return stoppedResult(true);
 
-    const verdict = await invokeOrchestratorVerdict(candidateAnswer, iteration);
+    const verdict = await invokeOrchestratorVerdict(candidateAnswer, iteration, currentPlan);
     if (await input.shouldStop?.()) return stoppedResult(true);
+
+    const postVerdictInterventionOutcome = await handlePendingInterventions({
+      currentAgent: 'orchestrator',
+      plan: currentPlan,
+    });
+    if (postVerdictInterventionOutcome === 'paused') return stoppedResult(true);
+    if (postVerdictInterventionOutcome === 'restart') {
+      if (await input.shouldStop?.()) return stoppedResult(true);
+      currentPlan = await invokeOrchestratorPlan();
+      orchestratorPlan = currentPlan;
+      continue;
+    }
+    if (postVerdictInterventionOutcome === 'continue_with_intervention') {
+      currentPlan = orchestratorPlanFromRoles(
+        [currentPlan.finalResponder],
+        'Orchestrator 검증 중 도착한 사용자 개입을 최종 후보에 반영하기 위해 마지막 Agent를 다시 실행합니다.',
+        {
+          strategy: 'orchestrator-late-intervention',
+          deliverableType: currentPlan.deliverableType,
+        },
+      );
+      continue;
+    }
 
     if (verdict.status === 'complete') {
       await sendOrchestratorAnswer(verdict.userAnswer ?? candidateAnswer);
@@ -496,7 +591,7 @@ export async function runAgentConversation(input: {
       break;
     }
 
-    currentPlan = orchestratorPlanFromVerdict(verdict, input.state, iteration + 1);
+    currentPlan = orchestratorPlanFromVerdict(verdict, input.state, iteration + 1, currentPlan.deliverableType);
     iteration += 1;
   }
 

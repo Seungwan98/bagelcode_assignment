@@ -1,5 +1,6 @@
 import { readMessages, readState, updateAgentStatus, updateRunStatus, appendEvent, writeArtifact } from '@/lib/store/file-store';
 import { runAgentConversation, type AgentExecutionInput } from '@/lib/runner/agent-session-runtime';
+import { inferDeliverableType } from '@/lib/runner/orchestrator-plan';
 import { clearContinuationWatchdog, scheduleContinuationWatchdog } from '@/lib/runner/continuation-watchdog';
 import { createId, nowIso } from '@/lib/utils/ids';
 
@@ -141,10 +142,12 @@ function mockOutput(input: AgentExecutionInput): string {
     const needsPlan = /계획|플랜|plan|설계|아키텍처|architecture|구조|요구사항|스펙|spec/i.test(request);
     const needsEngineering = /구현|수정|추가|개발|코드|버그|오류|에러|설정|반영|config|adapter|runtime|프롬프트|prompt/i.test(request);
     const needsReview = /검토|리뷰|확인|맞는지|위험|리스크|review|qa/i.test(request);
+    const deliverableType = inferDeliverableType(request);
     if (needsPlan) {
       return JSON.stringify({
         strategy: 'dynamic-orchestrator',
         reason: '요청에 계획, 설계, 구조 판단이 포함되어 Planner, Engineer, Reviewer 품질 게이트가 필요합니다.',
+        deliverableType,
         steps: [
           {
             agent: 'planner',
@@ -190,6 +193,7 @@ function mockOutput(input: AgentExecutionInput): string {
         reason: needsReview
           ? '요청이 기술 구현 또는 설정 변경이며 검토 관점도 필요하므로 Engineer 뒤에 Reviewer 품질 게이트를 둡니다.'
           : '요청이 기술 구현 또는 설정 변경에 해당하므로 Engineer 결과를 Orchestrator가 최종화합니다.',
+        deliverableType,
         steps,
         finalResponder: needsReview ? 'reviewer' : 'engineer',
       });
@@ -198,6 +202,7 @@ function mockOutput(input: AgentExecutionInput): string {
       return JSON.stringify({
         strategy: 'dynamic-orchestrator',
         reason: '사용자가 검토를 요청했으므로 Reviewer가 품질 리포트를 작성하고 Orchestrator가 최종 답변을 정리합니다.',
+        deliverableType: 'answer',
         steps: [
           {
             agent: 'reviewer',
@@ -212,6 +217,7 @@ function mockOutput(input: AgentExecutionInput): string {
     return JSON.stringify({
       strategy: 'dynamic-orchestrator',
       reason: '단순 질문으로 분류되어 Engineer 결과를 Orchestrator가 최종 답변으로 정리합니다.',
+      deliverableType: 'answer',
       steps: [
         {
           agent: 'engineer',
@@ -231,11 +237,25 @@ function mockOutput(input: AgentExecutionInput): string {
     ].join('\n');
   }
   if (input.definition.id === 'engineer') {
-    return [
+    const lines = [
       'Planner 전달 내용을 구현 관점으로 정리했습니다.',
       `핵심 요구: ${input.context.userRequest}`,
       '현재 AgentBoard runtime은 Orchestrator가 배정한 업무와 저장된 메시지 이력을 다음 Agent prompt context로 주입해 Agent 간 대화 증거를 유지합니다.',
-    ].join('\n');
+    ];
+    if (input.context.deliverableType === 'implementation') {
+      lines.push(
+        '',
+        'changedFiles:',
+        `- ${input.context.implementationWorkspace ?? `.agentboard/workspaces/${input.context.runId}`}/mock-implementation.md`,
+        'commandsRun:',
+        '- mock implementation validation',
+        'testResults:',
+        '- passed: mock mode implementation evidence recorded',
+        'remainingRisks:',
+        '- mock mode는 실제 파일을 쓰지 않고 협업 흐름 증거만 시뮬레이션합니다.',
+      );
+    }
+    return lines.join('\n');
   }
   return [
     '판정: 승인 가능',
@@ -246,6 +266,7 @@ function mockOutput(input: AgentExecutionInput): string {
 }
 
 async function runScript(runId: string): Promise<void> {
+  const initialMessages = await readMessages(runId);
   await updateRunStatus(runId, 'running');
   await appendEvent(runId, {
     id: createId('evt'),
@@ -270,7 +291,7 @@ async function runScript(runId: string): Promise<void> {
 
   const result = await runAgentConversation({
     state,
-    messages: await readMessages(runId),
+    messages: initialMessages,
     shouldStop: () => shouldStop(runId),
     invokeAgent: async (execution) => {
       await updateAgentStatus(runId, execution.definition.id, 'thinking');

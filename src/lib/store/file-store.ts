@@ -33,6 +33,7 @@ const MAX_SESSION_RECENT_RUNS = 12;
 const DEFAULT_STALE_RUN_AFTER_MS = 15 * 60 * 1000;
 const DEFAULT_CONTINUATION_IDLE_TIMEOUT_MS = 15_000;
 const DEFAULT_CONTINUATION_MAX_ITERATIONS = 5;
+const TERMINAL_RUN_STATUSES = new Set<Run['status']>(['completed', 'failed', 'stopped', 'stale']);
 export function runDir(runId: string): string {
   return join(getAgentboardRoot(), runId);
 }
@@ -72,6 +73,15 @@ export function agentInboxPath(runId: string, agentId: string): string {
 
 export function artifactPath(runId: string): string {
   return join(runDir(runId), 'artifacts', 'final-report.md');
+}
+
+export function implementationWorkspaceDir(runId: string): string {
+  const runsRoot = getAgentboardRoot();
+  const defaultRunsRoot = join(/*turbopackIgnore: true*/ process.cwd(), '.agentboard/runs');
+  const workspacesRoot = runsRoot === defaultRunsRoot
+    ? join(/*turbopackIgnore: true*/ process.cwd(), '.agentboard/workspaces')
+    : join(dirname(runsRoot), 'workspaces');
+  return join(workspacesRoot, runId);
 }
 
 export function createAgentStates(roles: AgentRole[] = DEFAULT_AGENTS, mode: RunMode = 'mock'): AgentState[] {
@@ -338,7 +348,29 @@ export async function readState(runId: string): Promise<RunState> {
   return JSON.parse(body) as RunState;
 }
 
-export async function writeState(runId: string, state: RunState): Promise<void> {
+export async function writeState(
+  runId: string,
+  state: RunState,
+  options: { allowTerminalTransition?: boolean } = {},
+): Promise<void> {
+  try {
+    const current = JSON.parse(await readFile(join(runDir(runId), 'state.json'), 'utf8')) as RunState;
+    if (
+      (current.run.status === 'stopped' && state.run.status !== 'stopped')
+      || (
+        !options.allowTerminalTransition
+        && TERMINAL_RUN_STATUSES.has(current.run.status)
+        && !TERMINAL_RUN_STATUSES.has(state.run.status)
+      )
+    ) {
+      state.run = current.run;
+      state.continuation = current.continuation;
+      state.latestArtifact = current.latestArtifact ?? state.latestArtifact;
+      state.sessions = current.sessions ?? state.sessions;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
   await mkdir(runDir(runId), { recursive: true });
   await writeTextAtomic(join(runDir(runId), 'state.json'), `${JSON.stringify(state, null, 2)}\n`);
   await writeTextAtomic(join(runDir(runId), 'run.json'), `${JSON.stringify(state.run, null, 2)}\n`);
@@ -357,7 +389,7 @@ export async function updateRunStatus(runId: string, status: Run['status']): Pro
       completedAt: updatedAt,
     });
   }
-  await writeState(runId, state);
+  await writeState(runId, state, { allowTerminalTransition: true });
   return state;
 }
 
@@ -412,7 +444,7 @@ export async function deleteRun(runId: string): Promise<void> {
   if (isActiveRun(state.run.status)) {
     throw new Error('Run is in progress');
   }
-  await rm(runDir(runId), { recursive: true, force: false });
+  await rm(runDir(runId), { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
   if (state.run.clientSessionId) {
     await removeClientSessionRun(state.run.clientSessionId, runId);
   }
@@ -425,6 +457,8 @@ export async function updateAgentStatus(runId: string, agentId: string, status: 
   agent.status = status;
   agent.lastMessageAt = nowIso();
   state.run.updatedAt = agent.lastMessageAt;
+  const latest = await readState(runId).catch(() => state);
+  if (TERMINAL_RUN_STATUSES.has(latest.run.status)) return;
   await writeState(runId, state);
   await appendEvent(runId, {
     id: createId('evt'),

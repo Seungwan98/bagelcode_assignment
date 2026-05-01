@@ -67,6 +67,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 11. Session persistence store/API test
 12. Chat UI state persistence smoke test
 13. Run delete store/API test
+14. implementation 요청이 workspace 변경 파일과 검증 증거 없이는 complete되지 않는 regression test
 
 ## 테스트 작성 규칙
 
@@ -76,6 +77,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 테스트가 생성한 `.agentboard` state는 테스트 종료 후 삭제한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
+- “구현 완료”는 텍스트 답변만 보지 말고 workspace 파일 증거와 commandsRun/testResults를 함께 검증한다.
 - Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Orchestrator user 답변을 검증한다.
 - Runtime 순서 변경은 Orchestrator plan parser와 fallback strategy 테스트로 먼저 고정한다.
 - Prompt 문구 변경은 stdout snapshot보다 필수 context section 존재 여부를 검증한다.
@@ -170,12 +172,11 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] 진행 중 개입 전송 시 Logs에 `user.intervention_queued`, `intervention.decision_made` 표시
 - [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
-- [ ] final artifact 표시
+- [ ] Logs 내부 실행 요약 artifact 표시
 - [ ] 루트 페이지 좌측 목록에서 active/recent run resume 가능
-- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/보고서 drawer, draft 복원
+- [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/실행 요약 표시 상태, draft 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능
 - [ ] `.agentboard/`가 gitignore됨
-- [ ] Xcode/Swift `DerivedData`, `.noindex`, `xcuserdata`가 gitignore됨
 
 ## 테스트 명령 예시
 

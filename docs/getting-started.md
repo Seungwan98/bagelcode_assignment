@@ -63,9 +63,9 @@ http://localhost:3000
 1. 첫 실행 시 브라우저가 session id를 자동 생성한다.
 2. run을 만든 뒤 좌측 세션 목록에 대화가 표시되는지 확인한다.
 3. `새 대화`를 눌러 빈 composer로 전환한 뒤 다른 메시지를 보내 새 run을 만든다.
-4. 좌측 목록에서 기존 run과 새 run을 번갈아 선택해 메시지/로그/보고서가 전환되는지 확인한다.
+4. 좌측 목록에서 기존 run과 새 run을 번갈아 선택해 메시지/로그/실행 요약이 전환되는지 확인한다.
 5. 완료되었거나 중단된 run의 `삭제` 버튼을 눌러 좌측 목록에서 제거되는지 확인한다.
-6. ChatRoom에서 선택 agent, Logs/보고서 drawer 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
+6. ChatRoom에서 선택 agent, Logs/실행 요약 표시 상태 같은 run별 UI 상태가 새로고침 뒤에도 유지되는지 확인한다.
 7. dev server를 재시작한 뒤 오래된 `running` run이 있으면 resume snapshot에서 stale 상태로 안전하게 표시되는지 확인한다.
 
 ## 예상 생성 파일
@@ -81,6 +81,8 @@ http://localhost:3000
   agents/<agentId>/inbox.jsonl
   agents/user/inbox.jsonl
   artifacts/final-report.md
+.agentboard/workspaces/<runId>/
+  implementation 산출물
 .agentboard/runs/_sessions/<clientSessionId>.json
 ```
 
@@ -113,7 +115,8 @@ AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주�
 - `tmux-codex` 권한 요청이 발생하면 해당 Agent 패널에 승인/거절 카드가 표시된다.
 - 완료/중단된 대화를 좌측 세션 목록에서 삭제할 수 있다.
 - 답변 생성 중에도 추가 지시를 보낼 수 있고 Orchestrator가 개입 처리 방식을 판단한다.
+- 실제 구현 요청은 workspace 변경 파일과 검증 결과가 있어야 완료 처리된다.
 - 진행 중에는 별도 `현재 작업 취소` 버튼으로 즉시 중단할 수 있다.
 - 답변 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.
 - 취소하면 run이 `stopped` 상태로 바뀌고 다시 요청을 보낼 수 있다.
-- 최종 artifact를 볼 수 있다.
+- Logs 안에서 실행 요약 artifact를 볼 수 있다.

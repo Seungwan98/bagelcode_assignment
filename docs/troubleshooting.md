@@ -307,6 +307,18 @@ echo $AGENTBOARD_ENGINEER_ADAPTER
 echo $AGENTBOARD_REVIEWER_ADAPTER
 ```
 
+## 앱 개발/파일 수정 요청이 incomplete로 끝남
+
+### 원인
+
+Orchestrator가 요청을 `implementation`으로 분류하면 텍스트 설명만으로는 완료하지 않는다. `.agentboard/workspaces/<runId>/` 안의 실제 변경 파일과 `commandsRun` 또는 `testResults` 증거가 필요하다.
+
+### 해결
+
+- Engineer Agent 로그에서 지정된 workspace에 파일을 썼는지 확인한다.
+- Agent 출력 마지막에 `changedFiles`, `commandsRun`, `testResults`, `remainingRisks` 섹션이 있는지 확인한다.
+- 반복 횟수가 부족하면 `.env.local`에서 `AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS` 값을 늘린다.
+
 ## Git에 secret 또는 run state가 잡힘
 
 ### 증상
@@ -334,27 +346,6 @@ git check-ignore .env.local .agentboard/runs/example/events.jsonl
 
 ```bash
 git restore --staged .env.local .agentboard
-```
-
-## `DerivedData` 또는 `Index.noindex`가 Git에 잡힘
-
-### 의미
-
-`TaskFlowMVVM/DerivedData`, `Index.noindex`, `xcuserdata`는 Xcode/Swift 빌드와 indexing 과정에서 생기는 로컬 생성물이다. AgentBoard 코드나 문서 산출물이 아니므로 commit하지 않는다.
-
-### 확인
-
-```bash
-git status --short --ignored | grep -E "DerivedData|noindex|xcuserdata"
-git check-ignore TaskFlowMVVM/DerivedData TaskFlowMVVM/DerivedData/Index.noindex
-```
-
-### 해결
-
-`.gitignore`가 최신이면 ignored로 보여야 한다. 필요하면 로컬 cache를 삭제한다.
-
-```bash
-rm -rf TaskFlowMVVM/DerivedData TaskFlowMVVM/Derived
 ```
 
 ## 문서와 구현이 어긋남
