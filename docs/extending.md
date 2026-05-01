@@ -30,7 +30,7 @@ AgentBoard에 새로운 agent, adapter, storage, UI 기능을 추가할 때 지�
 ```text
 orchestrator -> researcher: 조사 업무 배정
 researcher -> engineer: 조사 결과 handoff
-engineer -> reviewer: 구현 방향 handoff
+engineer -> reviewer: 필요한 경우 품질 검토 handoff
 ```
 
 ## 새 Agent adapter 추가
@@ -61,7 +61,7 @@ interface AgentAdapter {
 stdout을 Agent Session Runtime에 반환한다. Runtime이 stdout을 message로 저장하고 다음 Agent prompt context에 주입한다. `cli` run은 다음 순서로 진행한다.
 
 ```text
-Orchestrator CLI -> selected Agent CLI(s) -> final artifact
+Orchestrator CLI -> selected Agent CLI(s) -> Orchestrator verification -> final artifact
 ```
 
 새 CLI를 붙일 때는 다음을 지킨다.

@@ -205,7 +205,7 @@ async function runScript(runId: string, signal: AbortSignal): Promise<void> {
       '',
       result.outputs.reviewer ?? '',
     ].join('\n');
-    await writeArtifact(runId, finalReport, 'reviewer');
+    await writeArtifact(runId, finalReport, 'orchestrator');
 
     for (const role of Object.keys(result.outputs)) {
       await updateAgentStatus(runId, role, 'done');

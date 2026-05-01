@@ -50,12 +50,12 @@ http://localhost:3000
    - `run.started`
    - `orchestrator -> agent` 업무 배정 메시지
    - 필요한 경우 `planner -> engineer` 또는 `engineer -> reviewer` handoff 메시지
-   - `reviewer -> orchestrator` 검토 메시지
+   - 필요한 경우 `reviewer -> orchestrator` 품질 검토 메시지
    - `artifact.updated`
 7. Orchestrator/Planner/Engineer/Reviewer 패널에서 각 Agent의 상태, 최근 메시지, 최근 이벤트를 확인한다.
 8. 답변 생성 중 하단 입력창이 계속 활성화되고 `개입 보내기`, `현재 작업 취소` 버튼이 보이는지 확인한다.
 9. 진행 중 `모바일 조건도 추가해줘` 같은 추가 지시를 보내 Orchestrator 패널과 Logs에 개입 판단이 남는지 확인한다.
-10. 답변이 완료되면 같은 입력창에 다음 질문을 보내 Reviewer → User 답변이 추가되는지 확인한다.
+10. 답변이 완료되면 같은 입력창에 다음 질문을 보내 Orchestrator → User 최종 답변이 추가되는지 확인한다.
 11. 취소 테스트가 필요하면 `현재 작업 취소`를 눌러 status가 `stopped`로 바뀌는지 확인한다.
 
 ## Session resume 확인

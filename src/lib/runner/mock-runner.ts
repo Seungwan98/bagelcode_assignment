@@ -97,16 +97,21 @@ async function shouldStop(runId: string): Promise<boolean> {
 function mockOutput(input: AgentExecutionInput): string {
   if (input.definition.id === 'orchestrator') {
     if (input.context.orchestratorTask === 'verify') {
+      const latestEngineer = [...input.context.handoffMessages].reverse().find((message) => message.from === 'engineer')?.body;
+      const latestReview = [...input.context.handoffMessages].reverse().find((message) => message.from === 'reviewer')?.body;
+      const answerSource = latestEngineer ?? input.context.candidateAnswer ?? '후보 결과가 비어 있습니다.';
       return JSON.stringify({
         status: 'complete',
         reason: 'Mock Orchestrator가 후보 답변이 사용자 목적을 충족한다고 판단했습니다.',
         userAnswer: [
-          '요청하신 내용에 대해 Orchestrator가 Sub-agent 결과를 검증했고 완료로 판단했습니다.',
+          '요청하신 내용에 대해 Orchestrator가 Sub-agent 결과를 검증하고 최종 답변으로 정리했습니다.',
           '',
           `요청: ${input.context.userRequest}`,
           '',
-          input.context.candidateAnswer ?? '후보 답변이 비어 있습니다.',
-        ].join('\n'),
+          answerSource,
+          latestReview ? '' : undefined,
+          latestReview ? `검토 결과: ${latestReview}` : undefined,
+        ].filter((line): line is string => line !== undefined).join('\n'),
         nextSteps: [],
       });
     }
@@ -135,10 +140,11 @@ function mockOutput(input: AgentExecutionInput): string {
     const request = input.context.userRequest;
     const needsPlan = /계획|플랜|plan|설계|아키텍처|architecture|구조|요구사항|스펙|spec/i.test(request);
     const needsEngineering = /구현|수정|추가|개발|코드|버그|오류|에러|설정|반영|config|adapter|runtime|프롬프트|prompt/i.test(request);
+    const needsReview = /검토|리뷰|확인|맞는지|위험|리스크|review|qa/i.test(request);
     if (needsPlan) {
       return JSON.stringify({
         strategy: 'dynamic-orchestrator',
-        reason: '요청에 계획, 설계, 구조 판단이 포함되어 Planner, Engineer, Reviewer 순서가 필요합니다.',
+        reason: '요청에 계획, 설계, 구조 판단이 포함되어 Planner, Engineer, Reviewer 품질 게이트가 필요합니다.',
         steps: [
           {
             agent: 'planner',
@@ -150,34 +156,54 @@ function mockOutput(input: AgentExecutionInput): string {
             agent: 'engineer',
             task: 'Planner 계획을 바탕으로 구체적인 구현 방향과 검증 관점을 작성한다.',
             reason: '기술적 실행 방법이 필요합니다.',
-            expectedOutput: 'Reviewer가 검토할 구현 관점과 테스트 포인트',
+            expectedOutput: 'Orchestrator가 검증할 구현 관점과 테스트 포인트',
           },
           {
             agent: 'reviewer',
-            task: '앞선 결과를 검토하고 사용자에게 보여줄 최종 답변을 작성한다.',
-            reason: '최종 사용자-facing 답변이 필요합니다.',
-            expectedOutput: '사용자에게 전달할 최종 답변',
+            task: 'Planner와 Engineer 결과의 정확성, 누락, 리스크를 검토한다.',
+            reason: '최종 답변 전 품질 게이트가 필요합니다.',
+            expectedOutput: 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트',
           },
         ],
         finalResponder: 'reviewer',
       });
     }
     if (needsEngineering) {
+      const steps = [
+        {
+          agent: 'engineer',
+          task: '사용자 요청을 구현 또는 설정 관점에서 구체화한다.',
+          reason: '기술적 판단과 실행 방향이 필요합니다.',
+          expectedOutput: 'Orchestrator가 검증할 구현 방향과 검증 관점',
+        },
+      ];
+      if (needsReview) {
+        steps.push({
+          agent: 'reviewer',
+          task: 'Engineer 결과의 누락, 위험, 사용자 요구 충족 여부를 검토한다.',
+          reason: '사용자가 검토 관점을 요청했거나 품질 점검이 필요합니다.',
+          expectedOutput: 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트',
+        });
+      }
       return JSON.stringify({
         strategy: 'dynamic-orchestrator',
-        reason: '요청이 기술 구현 또는 설정 변경에 해당하므로 Engineer와 Reviewer가 필요합니다.',
+        reason: needsReview
+          ? '요청이 기술 구현 또는 설정 변경이며 검토 관점도 필요하므로 Engineer 뒤에 Reviewer 품질 게이트를 둡니다.'
+          : '요청이 기술 구현 또는 설정 변경에 해당하므로 Engineer 결과를 Orchestrator가 최종화합니다.',
+        steps,
+        finalResponder: needsReview ? 'reviewer' : 'engineer',
+      });
+    }
+    if (needsReview) {
+      return JSON.stringify({
+        strategy: 'dynamic-orchestrator',
+        reason: '사용자가 검토를 요청했으므로 Reviewer가 품질 리포트를 작성하고 Orchestrator가 최종 답변을 정리합니다.',
         steps: [
           {
-            agent: 'engineer',
-            task: '사용자 요청을 구현 또는 설정 관점에서 구체화한다.',
-            reason: '기술적 판단과 실행 방향이 필요합니다.',
-            expectedOutput: 'Reviewer가 검토할 구현 방향과 검증 관점',
-          },
-          {
             agent: 'reviewer',
-            task: 'Engineer 결과를 검토하고 사용자에게 보여줄 최종 답변을 작성한다.',
-            reason: '최종 답변의 정확성과 누락 여부를 확인해야 합니다.',
-            expectedOutput: '사용자에게 전달할 최종 답변',
+            task: '사용자 요청과 대화 맥락을 기준으로 검토 의견을 작성한다.',
+            reason: '명시적인 검토 요청입니다.',
+            expectedOutput: 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트',
           },
         ],
         finalResponder: 'reviewer',
@@ -185,23 +211,23 @@ function mockOutput(input: AgentExecutionInput): string {
     }
     return JSON.stringify({
       strategy: 'dynamic-orchestrator',
-      reason: '단순 질문으로 분류되어 Reviewer가 바로 최종 답변을 만들 수 있습니다.',
+      reason: '단순 질문으로 분류되어 Engineer 결과를 Orchestrator가 최종 답변으로 정리합니다.',
       steps: [
         {
-          agent: 'reviewer',
-          task: '사용자 질문에 직접 답할 수 있도록 최종 답변을 작성한다.',
-          reason: '계획 수립이나 구현 검토가 필요하지 않습니다.',
-          expectedOutput: '사용자에게 보여줄 간결한 답변',
+          agent: 'engineer',
+          task: '사용자 질문에 답할 수 있는 핵심 내용을 간결하게 정리한다.',
+          reason: '계획 수립이나 별도 리뷰가 필요하지 않습니다.',
+          expectedOutput: 'Orchestrator가 검증할 간결한 답변 후보',
         },
       ],
-      finalResponder: 'reviewer',
+      finalResponder: 'engineer',
     });
   }
   if (input.definition.id === 'planner') {
     return [
       '사용자 요청을 분석했습니다.',
       `요청: ${input.context.userRequest}`,
-      'Engineer는 이 요청을 구현 가능성, 사용자-facing 답변, 검증 관점으로 나누어 정리해야 합니다.',
+      'Engineer는 이 요청을 구현 가능성, Orchestrator 최종 답변 후보, 검증 관점으로 나누어 정리해야 합니다.',
     ].join('\n');
   }
   if (input.definition.id === 'engineer') {
@@ -212,11 +238,10 @@ function mockOutput(input: AgentExecutionInput): string {
     ].join('\n');
   }
   return [
-    '요청하신 내용에 대해 Orchestrator가 필요한 Agent를 배정했고, 선택된 Agent들이 검토했습니다.',
-    '',
-    `요청: ${input.context.userRequest}`,
-    '',
-    '답변: AgentBoard는 Orchestrator가 요청을 분석해 필요한 Agent만 선택하고, 각 Agent에게 업무 지시를 message bus로 전달합니다. Codex stdout은 Agent 자체의 세션이 아니라 adapter 실행 결과이며, 실제 대화 이력은 AgentBoard가 관리합니다. 자세한 Agent 간 전달 과정은 Logs에서 확인할 수 있습니다.',
+    '판정: 승인 가능',
+    '충족한 점: Orchestrator가 필요한 Agent를 배정했고, AgentBoard message bus에 handoff가 남습니다.',
+    '누락/위험: 실제 외부 CLI adapter에서는 timeout, 권한 요청, JSON parse 실패가 발생할 수 있습니다.',
+    '권고: Orchestrator 최종 답변에는 adapter 출력이 직접 통신 채널이 아니라 runtime이 저장한 결과라는 점을 포함하세요.',
   ].join('\n');
 }
 
@@ -264,9 +289,9 @@ async function runScript(runId: string): Promise<void> {
     ? result.orchestratorVerdicts.map((verdict, index) => `${index + 1}. ${verdict.status}: ${verdict.reason}`).join('\n')
     : 'Orchestrator 검증 없음';
 
-  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n- Latest User Request: ${result.context.userRequest}\n- Turn User Message ID: ${result.context.turnUserMessageId}\n- Verification Iterations: ${result.verificationIterations}\n\n## Orchestrator Plan\n\n${result.orchestratorPlan.steps.map((step, index) => `${index + 1}. ${step.agent}: ${step.task}`).join('\n')}\n\n## Orchestrator Verdicts\n\n${verdictSummary}\n\n## Agent Collaboration Evidence\n\n- Orchestrator → Agent: 선택된 Agent별 업무 지시 전달\n- Agent → Agent: 필요한 경우 다음 Agent에게 결과 handoff 전달\n- Final Responder → Orchestrator: 후보 답변 전달\n- Orchestrator → Orchestrator: 사용자 목적 충족 여부 검증\n- Orchestrator → User: 검증 완료 후 사용자-facing 답변 생성\n\n## Conversation Requests\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Codex stdout을 직접 Agent 간 통신으로 보지 않고, Orchestrator plan, AgentBoard message bus, session context 주입, Orchestrator 검증 루프를 통해 Agent 팀의 대화와 답변을 구성한다.\n`;
+  const finalReport = `# AgentBoard Mock Collaboration Report\n\n## Run\n\n- Run ID: ${runId}\n- Mode: mock\n- Latest User Request: ${result.context.userRequest}\n- Turn User Message ID: ${result.context.turnUserMessageId}\n- Verification Iterations: ${result.verificationIterations}\n\n## Orchestrator Plan\n\n${result.orchestratorPlan.steps.map((step, index) => `${index + 1}. ${step.agent}: ${step.task}`).join('\n')}\n\n## Orchestrator Verdicts\n\n${verdictSummary}\n\n## Agent Collaboration Evidence\n\n- Orchestrator → Agent: 선택된 Agent별 업무 지시 전달\n- Agent → Agent: 필요한 경우 다음 Agent에게 결과 handoff 전달\n- Verification Candidate Provider → Orchestrator: 후보 결과 또는 품질 검토 리포트 전달\n- Orchestrator → Orchestrator: 사용자 목적 충족 여부 검증\n- Orchestrator → User: 검증 완료 후 사용자-facing 답변 생성\n\n## Conversation Requests\n\n${interventionSummary}\n\n## Final Decision\n\nAgentBoard MVP는 Codex stdout을 직접 Agent 간 통신으로 보지 않고, Orchestrator plan, AgentBoard message bus, session context 주입, Orchestrator 검증 루프를 통해 Agent 팀의 대화와 답변을 구성한다.\n`;
   if (await shouldStop(runId)) return;
-  await writeArtifact(runId, finalReport, 'reviewer');
+  await writeArtifact(runId, finalReport, 'orchestrator');
 
   if (await shouldStop(runId)) return;
   for (const role of Object.keys(result.outputs)) {

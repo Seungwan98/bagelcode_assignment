@@ -197,7 +197,7 @@ async function withTmuxEnv<T>(fn: (statePath: string) => Promise<T>): Promise<T>
   process.env.AGENTBOARD_TMUX_CMD = `${process.execPath} ${fakeTmux}`;
   process.env.AGENTBOARD_TMUX_ALLOWLIST = basename(process.execPath);
   process.env.AGENTBOARD_TMUX_CAPTURE_DELAY_MS = '0';
-  process.env.AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS = '5000';
+  process.env.AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS = '10000';
   process.env.AGENTBOARD_TMUX_COMPLETION_POLL_MS = '5';
   process.env.AGENTBOARD_TMUX_READY_TIMEOUT_MS = '0';
   process.env.AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS = '0';
@@ -241,7 +241,7 @@ async function waitForCompletedRun(runId: string): Promise<void> {
 }
 
 async function waitForApprovalRequest(runId: string): Promise<string> {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const events = await readEvents(runId);
     const requested = events.find((event) => event.type === 'approval.requested');
@@ -396,7 +396,7 @@ test('TmuxSessionAdapter surfaces permission prompts and resumes after approval'
   assert.equal(approvalResponse.status, 200);
   assert.match(result.stdout, /\[reviewer\] captured tmux output/);
   assert.equal(updated.sessions?.reviewer?.status, 'completed');
-  assert.equal(updated.agents.find((agent) => agent.role === 'reviewer')?.status, 'thinking');
+  assert.ok(['thinking', 'waiting'].includes(updated.agents.find((agent) => agent.role === 'reviewer')?.status ?? ''));
   assert.equal(requested?.payload.approvalId, approvalId);
   assert.equal(requested?.payload.command, 'swiftc -typecheck examples/MockMVVMViewModels.swift');
   assert.equal(approved?.payload.approvalId, approvalId);

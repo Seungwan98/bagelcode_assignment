@@ -67,7 +67,7 @@ cat .agentboard/runs/<runId>/events.jsonl
 cat .agentboard/runs/<runId>/state.json
 ```
 
-사용자 요청은 `from: "user"`, 답변은 `from: "reviewer"`, `to: "user"` 메시지로 남아야 한다.
+사용자 요청은 `from: "user"`, 답변은 `from: "orchestrator"`, `to: "user"` 메시지로 남아야 한다. Reviewer는 필요한 경우 `to: "orchestrator"` 품질 검토 메시지만 남긴다.
 
 ## 진행 중 보낸 개입이 반영되지 않음
 

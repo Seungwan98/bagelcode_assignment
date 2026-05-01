@@ -30,7 +30,7 @@ process.stdin.on('end', () => {
     }
     console.log(JSON.stringify({
       strategy: 'dynamic-orchestrator',
-      reason: 'CLI 테스트는 Engineer와 Reviewer만 필요합니다.',
+      reason: 'CLI 테스트는 Engineer와 Reviewer 품질 게이트가 필요합니다.',
       steps: [
         {
           agent: 'engineer',
@@ -40,9 +40,9 @@ process.stdin.on('end', () => {
         },
         {
           agent: 'reviewer',
-          task: 'Engineer 결과를 최종 답변으로 정리한다.',
-          reason: '사용자-facing 답변이 필요합니다.',
-          expectedOutput: '사용자에게 전달할 최종 답변'
+          task: 'Engineer 결과의 누락과 위험을 검토한다.',
+          reason: '최종 답변 전 품질 점검이 필요합니다.',
+          expectedOutput: 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트'
         }
       ],
       finalResponder: 'reviewer'

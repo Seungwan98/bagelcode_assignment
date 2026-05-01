@@ -38,6 +38,8 @@ Primary proof points:
   - Future Firebase/Cloud adapters must not break mock mode.
 - User interventions are first-class messages from `user` to an agent or `all`.
 - Active runs must still accept user intervention messages; Orchestrator decides at the next checkpoint whether to continue, restart, or ask the user for clarification.
+- Reviewer is a conservative quality gate only: it reports accuracy, omissions, risks, and recommendations back to Orchestrator instead of writing the user-facing final answer.
+- Orchestrator owns the final user-facing answer after verifying the selected Agent outputs and any Reviewer quality report.
 - Final artifacts must reference the run, participating agents, major messages, and any user intervention.
 
 ## Firebase and secret handling

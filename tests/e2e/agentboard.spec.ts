@@ -51,7 +51,7 @@ test('새 대화에서 에이전트 협업 흐름과 로그 상세를 확인할 
   await expect(page.locator('.chat-topbar .badge').filter({ hasText: /^completed$/ })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByLabel('Agents에게 보낼 메시지')).toBeEnabled();
   await expect(page.locator('.agent-panel.planner .assignment-card')).toContainText('Orchestrator assigned');
-  await expect(page.locator('.agent-panel.reviewer')).toContainText('사용자에게 전달할 최종 답변');
+  await expect(page.locator('.agent-panel.reviewer')).toContainText('품질 검토');
 
   await page.getByRole('button', { name: /Logs \d+/ }).click();
   await expect(page.getByRole('heading', { name: 'Agent handoff logs' })).toBeVisible();

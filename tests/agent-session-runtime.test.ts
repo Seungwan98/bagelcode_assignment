@@ -41,6 +41,18 @@ test('agent execution context uses the latest user turn and current handoffs', a
   assert.doesNotMatch(prompt, /오래된 handoff/);
 }));
 
+test('reviewer prompt is constrained to quality review instead of final response', async () => withStateDir(async () => {
+  const state = await createRun({ title: 'reviewer prompt', brief: '검토해줘', mode: 'mock' });
+  await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: 'Engineer 결과를 검토해줘' });
+
+  const context = createAgentExecutionContext(state, await readMessages(state.run.id));
+  const prompt = buildAgentPrompt(getAgentDefinition('reviewer'), context);
+
+  assert.match(prompt, /품질 검토 리포트만 작성/);
+  assert.match(prompt, /사용자에게 직접 전달할 최종 답변을 작성하지 않는다/);
+  assert.match(prompt, /Orchestrator가 최종 답변에 반영할 권고/);
+}));
+
 test('agent conversation runtime uses orchestrator plan for assignments and user answer', async () => withStateDir(async () => {
   const state = await createRun({ title: 'runtime emit', brief: '런타임 구조를 설명해줘', mode: 'mock' });
   await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '런타임 구조를 설명해줘' });
@@ -62,9 +74,9 @@ test('agent conversation runtime uses orchestrator plan for assignments and user
             },
             {
               agent: 'reviewer',
-              task: 'Engineer 결과를 사용자-facing 답변으로 정리한다.',
-              reason: '최종 답변이 필요합니다.',
-              expectedOutput: '사용자에게 전달할 답변',
+              task: 'Engineer 결과의 누락과 위험을 검토한다.',
+              reason: '최종 답변 전 품질 점검이 필요합니다.',
+              expectedOutput: '품질 검토 리포트',
             },
           ],
           finalResponder: 'reviewer',
@@ -151,7 +163,7 @@ test('agent conversation runtime loops when orchestrator verdict is incomplete',
     assert.equal(result.verificationIterations, 2);
     assert.deepEqual(result.orchestratorVerdicts.map((verdict) => verdict.status), ['incomplete', 'complete']);
     assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'engineer' && /구현 관점/.test(message.body)));
-    assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'reviewer' && /구현 관점 보완 결과/.test(message.body)));
+    assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'orchestrator' && message.kind === 'result' && /구현 관점 보완 결과/.test(message.body)));
     assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'orchestrator' && /Orchestrator Verdict: incomplete/.test(message.body)));
     assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'user' && /최종 완료/.test(message.body)));
     assert.ok(!messages.some((message) => message.from === 'reviewer' && message.to === 'user'));
@@ -175,7 +187,7 @@ test('agent conversation runtime lets orchestrator continue with a running user 
           reason: 'Engineer와 Reviewer가 필요합니다.',
           steps: [
             { agent: 'engineer', task: '초안을 만든다.', reason: '기술 초안 필요', expectedOutput: '초안' },
-            { agent: 'reviewer', task: '최종 답변을 작성한다.', reason: '사용자 답변 필요', expectedOutput: '최종 답변' },
+            { agent: 'reviewer', task: '초안의 누락과 위험을 검토한다.', reason: '최종 답변 전 품질 점검 필요', expectedOutput: '품질 검토 리포트' },
           ],
           finalResponder: 'reviewer',
         });
@@ -227,14 +239,14 @@ test('agent conversation runtime pauses and asks user when intervention intent i
       if (definition.id === 'orchestrator' && context.orchestratorTask === 'plan') {
         return JSON.stringify({
           strategy: 'reviewer-only',
-          reason: 'Reviewer 답변이면 충분합니다.',
+          reason: 'Engineer 후보를 Orchestrator가 최종화하면 충분합니다.',
           steps: [
-            { agent: 'reviewer', task: '답변을 작성한다.', reason: '최종 답변 필요', expectedOutput: '답변' },
+            { agent: 'engineer', task: '답변 후보를 작성한다.', reason: '간단한 답변 후보가 필요합니다.', expectedOutput: '답변 후보' },
           ],
-          finalResponder: 'reviewer',
+          finalResponder: 'engineer',
         });
       }
-      if (definition.id === 'reviewer') {
+      if (definition.id === 'engineer') {
         await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '다른 방향도 봐줘' });
         return '기존 방향 답변';
       }
@@ -273,12 +285,12 @@ test('agent conversation runtime replans when orchestrator restarts after interv
         planCount += 1;
         if (planCount === 1) {
           return JSON.stringify({
-            strategy: 'reviewer-only',
+            strategy: 'engineer-only',
             reason: '처음에는 단순 답변으로 판단했습니다.',
             steps: [
-              { agent: 'reviewer', task: '짧게 답한다.', reason: '단순 요청', expectedOutput: '짧은 답변' },
+              { agent: 'engineer', task: '짧은 답변 후보를 작성한다.', reason: '단순 요청', expectedOutput: '짧은 답변 후보' },
             ],
-            finalResponder: 'reviewer',
+            finalResponder: 'engineer',
           });
         }
         assert.equal(context.userRequest, '구현 관점으로 다시 계획한다.');
@@ -287,12 +299,12 @@ test('agent conversation runtime replans when orchestrator restarts after interv
           reason: '개입으로 구현 관점이 필요해졌습니다.',
           steps: [
             { agent: 'engineer', task: '구현 관점을 정리한다.', reason: '기술 검토 필요', expectedOutput: '구현 관점' },
-            { agent: 'reviewer', task: '최종 답변을 작성한다.', reason: '최종 답변 필요', expectedOutput: '답변' },
+            { agent: 'reviewer', task: '구현 관점의 누락과 위험을 검토한다.', reason: '최종 답변 전 품질 점검 필요', expectedOutput: '품질 검토 리포트' },
           ],
           finalResponder: 'reviewer',
         });
       }
-      if (definition.id === 'reviewer' && planCount === 1) {
+      if (definition.id === 'engineer' && planCount === 1) {
         await sendMessage({ runId: state.run.id, from: 'user', to: 'all', kind: 'user_intervention', body: '처음부터 구현 관점으로 다시 해줘' });
         return '짧은 답변';
       }
@@ -304,7 +316,7 @@ test('agent conversation runtime replans when orchestrator restarts after interv
         });
       }
       if (definition.id === 'engineer') return '구현 관점';
-      if (definition.id === 'reviewer') return '구현 관점 최종 답변';
+      if (definition.id === 'reviewer') return '구현 관점 품질 검토 리포트';
       if (definition.id === 'orchestrator' && context.orchestratorTask === 'verify') {
         return JSON.stringify({
           status: 'complete',
@@ -321,7 +333,7 @@ test('agent conversation runtime replans when orchestrator restarts after interv
   assert.equal(result.stopped, false);
   assert.equal(planCount, 2);
   assert.deepEqual(result.orchestratorPlan.steps.map((step) => step.agent), ['engineer', 'reviewer']);
-  assert.equal(result.userAnswer, '구현 관점 최종 답변');
+  assert.equal(result.userAnswer, '구현 관점 품질 검토 리포트');
   assert.ok(events.some((event) => event.type === 'intervention.decision_made' && event.payload.action === 'restart'));
 }));
 
@@ -350,6 +362,13 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
     '```',
   ].join('\n'), state, '후보 답변');
   const fallbackVerdict = parseOrchestratorVerdict('JSON이 아닌 출력', state, '후보 답변');
+  const engineerOnlyPlan = parseOrchestratorPlan(JSON.stringify({
+    strategy: 'engineer-only',
+    reason: '기술 답변은 Engineer 결과를 Orchestrator가 최종화합니다.',
+    steps: [
+      { agent: 'engineer', task: '핵심 답변을 작성한다.', reason: '기술 관점이 필요합니다.', expectedOutput: '답변 후보' },
+    ],
+  }), state);
   const hardWrappedPlan = parseOrchestratorPlan([
     '{',
     '  "strategy": "dynamic-orchestrator",',
@@ -357,21 +376,23 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
     '  하지 않으므로 최종 응답만 만들면 됩니다.",',
     '  "steps": [',
     '    {',
-    '      "agent": "reviewer",',
-    '      "task": "사용자의 간단한 인사에 자연스럽고 짧게 응답할 최종 답변을 작성한다.",',
+    '      "agent": "engineer",',
+    '      "task": "사용자의 간단한 인사에 자연스럽고 짧게 응답할 후보를 작성한다.",',
     '      "reason": "요청이 단순하여 Planner나 Engineer의 분석 및 구현 작업이 필요하지',
     '      않다.",',
-    '      "expectedOutput": "사용자에게 전달할 간단한 인사 응답"',
+    '      "expectedOutput": "Orchestrator가 검증할 간단한 인사 응답 후보"',
     '    }',
     '  ],',
-    '  "finalResponder": "reviewer"',
+    '  "finalResponder": "engineer"',
     '}',
   ].join('\n'), state);
 
   assert.equal(plan.strategy, 'wrapped-json');
   assert.deepEqual(plan.steps.map((step) => step.agent), ['engineer', 'reviewer']);
+  assert.deepEqual(engineerOnlyPlan.steps.map((step) => step.agent), ['engineer']);
+  assert.equal(engineerOnlyPlan.finalResponder, 'engineer');
   assert.equal(hardWrappedPlan.strategy, 'dynamic-orchestrator');
-  assert.deepEqual(hardWrappedPlan.steps.map((step) => step.agent), ['reviewer']);
+  assert.deepEqual(hardWrappedPlan.steps.map((step) => step.agent), ['engineer']);
   assert.match(hardWrappedPlan.reason, /기술 구현이 필요 하지 않으므로/);
   assert.equal(verdict.status, 'complete');
   assert.equal(verdict.userAnswer, '최종 답변');

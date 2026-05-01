@@ -95,11 +95,6 @@ function nextStepAgent(plan: OrchestratorPlan, index: number): WorkerAgentRole |
   return plan.steps[index + 1]?.agent;
 }
 
-function handoffKindFor(definition: AgentDefinition, nextAgent: WorkerAgentRole | undefined): AgentMessage['kind'] {
-  if (!nextAgent) return definition.userFacing ? 'result' : definition.handoffKind;
-  return definition.handoffKind;
-}
-
 function maxVerificationIterations(): number {
   const configured = Number(process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS ?? DEFAULT_MAX_VERIFICATION_ITERATIONS);
   if (!Number.isFinite(configured) || configured < 1) return DEFAULT_MAX_VERIFICATION_ITERATIONS;
@@ -345,7 +340,7 @@ export async function runAgentConversation(input: {
           runId: context.runId,
           from: definition.id,
           to: nextAgent,
-          kind: handoffKindFor(definition, nextAgent),
+          kind: definition.handoffKind,
           body,
         });
         context.handoffMessages.push(message);
@@ -353,15 +348,15 @@ export async function runAgentConversation(input: {
       }
 
       if (definition.id === plan.finalResponder) {
-        const reviewMessage = await managers.messageBus.send({
+        const candidateMessage = await managers.messageBus.send({
           runId: context.runId,
           from: definition.id,
           to: 'orchestrator',
-          kind: 'review',
+          kind: definition.id === 'reviewer' ? 'review' : 'result',
           body,
         });
-        context.handoffMessages.push(reviewMessage);
-        emittedMessages.push(reviewMessage);
+        context.handoffMessages.push(candidateMessage);
+        emittedMessages.push(candidateMessage);
         candidateAnswer = body;
 
         if (!orchestratorEnabled) {
@@ -467,6 +462,19 @@ export async function runAgentConversation(input: {
       orchestratorPlan = currentPlan;
       continue;
     }
+
+    const finalInterventionOutcome = await handlePendingInterventions({
+      currentAgent: 'orchestrator',
+      plan: currentPlan,
+    });
+    if (finalInterventionOutcome === 'paused') return stoppedResult(true);
+    if (finalInterventionOutcome === 'restart') {
+      if (await input.shouldStop?.()) return stoppedResult(true);
+      currentPlan = await invokeOrchestratorPlan();
+      orchestratorPlan = currentPlan;
+      continue;
+    }
+
     const { candidateAnswer } = execution;
     if (await input.shouldStop?.()) return stoppedResult(true);
 

@@ -77,7 +77,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 테스트가 생성한 `.agentboard` state는 테스트 종료 후 삭제한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
-- Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Reviewer user 답변을 검증한다.
+- Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Orchestrator user 답변을 검증한다.
 - Runtime 순서 변경은 Orchestrator plan parser와 fallback strategy 테스트로 먼저 고정한다.
 - Prompt 문구 변경은 stdout snapshot보다 필수 context section 존재 여부를 검증한다.
 - Browser localStorage 기반 UI state는 서버 audit state와 분리해 테스트한다.
@@ -145,7 +145,7 @@ it('persists user request and starts a new agent answer turn', async () => {
     body: 'README 실행성을 우선해 답해줘',
   }));
   expect(messages).toContainEqual(expect.objectContaining({
-    from: 'reviewer',
+    from: 'orchestrator',
     to: 'user',
     kind: 'result',
   }));

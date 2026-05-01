@@ -101,7 +101,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - 실행 중 새로 들어온 사용자 개입 식별
 - `messages.jsonl` 기반 visible conversation과 agent handoff context 구성
 - Orchestrator Agent가 이번 turn의 실행 계획 JSON 생성
-- Agent step 사이 checkpoint에서 Orchestrator가 개입을 `continue`, `restart`, `ask_user` 중 하나로 판단
+- Agent step 사이와 verify 직전 checkpoint에서 Orchestrator가 개입을 `continue`, `restart`, `ask_user` 중 하나로 판단
 - Agent별 prompt 조립과 adapter 호출
 - Agent 간 메시지 라우팅
 - 완료/중단 run 삭제 시 local state와 client session index 정리
@@ -134,7 +134,8 @@ enabled agents ∩ [planner, engineer, reviewer]
 
 정상 흐름에서는 Orchestrator plan이 다음을 결정한다.
 
-- Reviewer만 재검토
+- Engineer 결과를 Orchestrator가 바로 최종화
+- Reviewer 품질 검토 gate 추가
 - Planner 생략 후 Engineer 직접 응답
 - Researcher 같은 신규 Agent 삽입
 - 사용자 승인 gate 이후 다음 Agent 실행
@@ -148,7 +149,7 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 - Codex CLI stdout은 직접 Agent 간 통신 채널이 아니라 adapter 실행 결과다.
 - Runtime은 최신 `user_intervention` 이후의 Agent handoff만 이번 turn context로 본다.
 - Runtime은 Orchestrator plan의 `steps`에 있는 Agent만 순서대로 실행한다.
-- 최종 응답 Agent 출력은 `finalResponder -> orchestrator` review 로그와 `finalResponder -> user` 최종 답변으로 모두 저장한다.
+- `finalResponder`는 사용자-facing 작성자가 아니라 Orchestrator가 검증할 후보 결과를 마지막으로 제공하는 Agent다. 최종 사용자 답변은 `orchestrator -> user` result로 저장한다.
 
 ### Message Bus
 
@@ -221,7 +222,7 @@ Browser localStorage clientSessionId -> GET /api/sessions/<clientSessionId> -> �
 ### 2. Agent 간 협업
 
 ```text
-User request -> Agent Session Runtime -> Orchestrator -> Message Bus assignments -> selected Agents -> Final Responder -> User answer + Artifact
+User request -> Agent Session Runtime -> Orchestrator -> Message Bus assignments -> selected Agents -> Orchestrator verification -> User answer + Artifact
 ```
 
 1. Runtime이 최신 사용자 요청과 최근 user-facing 대화를 context로 만든다.
@@ -229,8 +230,8 @@ User request -> Agent Session Runtime -> Orchestrator -> Message Bus assignments
 3. Runtime이 Orchestrator plan을 파싱하고, 각 step을 `orchestrator -> agent` `instruction` 메시지로 저장한다.
 4. Prompt Builder가 Agent별 system prompt, 최신 사용자 요청, visible conversation, handoff context, Orchestrator assignment를 조립한다.
 5. 선택된 Agent들이 plan 순서대로 실행되고 필요한 경우 다음 Agent에게 handoff 메시지를 남긴다.
-6. Agent step이 끝날 때 새 사용자 개입이 있으면 Orchestrator가 `continue`, `restart`, `ask_user` 중 하나를 결정한다.
-7. 최종 응답 Agent 출력은 `finalResponder -> orchestrator` `review` 로그와 `finalResponder -> user` `result` 답변으로 저장된다.
+6. Agent step이 끝날 때 또는 verify 직전 새 사용자 개입이 있으면 Orchestrator가 `continue`, `restart`, `ask_user` 중 하나를 결정한다.
+7. `finalResponder` 출력은 `finalResponder -> orchestrator` 후보 결과 또는 검토 로그로 저장되고, 최종 사용자 답변은 Orchestrator 검증 뒤 `orchestrator -> user` `result`로 저장된다.
 8. Runner가 `artifacts/final-report.md`를 갱신한다.
 
 ### 2-1. 진행 중 사용자 개입
@@ -246,12 +247,12 @@ Browser -> POST /api/runs/<runId>/interventions -> user_intervention 저장 -> �
 ### 3. 사용자 요청 turn
 
 ```text
-Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner 시작 -> Reviewer 답변 -> ChatRoom refresh
+Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner 시작 -> Orchestrator 최종 답변 -> ChatRoom refresh
 ```
 
 1. 사용자가 ChatRoom composer에서 다음 요청을 보낸다.
 2. API가 `user_intervention` 메시지를 저장하고 run status를 `running`으로 바꾼다.
-3. Runner가 Orchestrator plan에 따라 필요한 Agent만 실행한 뒤 Final Responder → User 답변 메시지를 생성한다.
+3. Runner가 Orchestrator plan에 따라 필요한 Agent만 실행한 뒤 Orchestrator → User 답변 메시지를 생성한다.
 4. 답변 생성 중에도 composer는 활성화되어 `개입 보내기`와 `현재 작업 취소` 버튼을 보여준다.
 5. 사용자가 `취소`를 누르면 control API가 runner를 정지하고 run status를 `stopped`로 바꾼다. 완료 또는 중단 뒤에는 같은 composer에서 다음 요청을 다시 보낼 수 있다.
 

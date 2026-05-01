@@ -512,7 +512,7 @@ export async function getRunActivity(runId: string): Promise<{ latestActivityAt:
   };
 }
 
-export async function writeArtifact(runId: string, body: string, createdBy = 'reviewer'): Promise<Artifact> {
+export async function writeArtifact(runId: string, body: string, createdBy = 'orchestrator'): Promise<Artifact> {
   const path = artifactPath(runId);
   const updatedAt = nowIso();
   const artifact: Artifact = {

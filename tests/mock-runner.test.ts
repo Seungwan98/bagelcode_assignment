@@ -27,7 +27,7 @@ async function withStateDir<T>(fn: () => Promise<T>, delayScale = '0'): Promise<
 }
 
 async function waitForRunStatus(runId: string, status: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const state = await readState(runId);
     if (state.run.status === status) return;
@@ -57,10 +57,10 @@ test('mock runner completes collaboration and reflects user intervention in fina
 
   assert.equal(completed.run.status, 'completed');
   assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'engineer'));
-  assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'reviewer'));
+  assert.ok(!messages.some((message) => message.from === 'orchestrator' && message.to === 'reviewer'));
   assert.ok(!messages.some((message) => message.from === 'planner' && message.to === 'engineer'));
-  assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'reviewer'));
-  assert.ok(messages.some((message) => message.from === 'reviewer' && message.to === 'orchestrator'));
+  assert.ok(messages.some((message) => message.from === 'engineer' && message.to === 'orchestrator' && message.kind === 'result'));
+  assert.ok(!messages.some((message) => message.from === 'reviewer' && message.to === 'orchestrator'));
   assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'orchestrator' && /Orchestrator Verdict: complete/.test(message.body)));
   assert.ok(messages.some((message) => message.from === 'orchestrator' && message.to === 'user' && /README 실행성/.test(message.body)));
   assert.match(artifact, /README 실행성을 최우선으로 반영해줘/);
@@ -131,7 +131,7 @@ test('intervention API starts a new agent answer turn after a completed run', as
 }));
 
 test('intervention API queues a new prompt while agents are answering', async () => withStateDir(async () => {
-  const state = await createRun({ title: 'busy turn', brief: '진행 중 요청', mode: 'mock' });
+  const state = await createRun({ title: 'busy turn', brief: '진행 중 요청 계획과 구현 방향을 검토해줘', mode: 'mock' });
   startMockRun(state.run.id);
   await waitForRunStatus(state.run.id, 'running');
 

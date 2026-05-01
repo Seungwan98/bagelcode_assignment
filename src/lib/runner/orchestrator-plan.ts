@@ -53,19 +53,19 @@ function enabledWorkerRoles(state: RunState): WorkerAgentRole[] {
 function defaultTaskFor(role: WorkerAgentRole): string {
   if (role === 'planner') return '사용자 요청의 의도, 목표, 제약, 필요한 산출물을 정리한다.';
   if (role === 'engineer') return '사용자 요청을 해결하기 위한 구체적인 기술 접근과 검증 관점을 작성한다.';
-  return '앞선 Agent 결과를 검토하고 사용자에게 보여줄 최종 답변을 작성한다.';
+  return '앞선 Agent 결과의 정확성, 누락, 리스크를 검토하고 Orchestrator에게 품질 판단을 전달한다.';
 }
 
 function defaultReasonFor(role: WorkerAgentRole): string {
   if (role === 'planner') return '요청을 실행 가능한 형태로 정리해야 한다.';
   if (role === 'engineer') return '구체적인 기술 판단과 해결책이 필요하다.';
-  return '사용자에게 최종 답변을 전달해야 한다.';
+  return '최종 사용자 답변 전에 품질 게이트가 필요하다.';
 }
 
 function defaultExpectedOutputFor(role: WorkerAgentRole): string {
   if (role === 'planner') return 'Engineer가 사용할 수 있는 요구사항과 실행 방향';
-  if (role === 'engineer') return 'Reviewer가 검토할 수 있는 해결책과 검증 관점';
-  return '사용자에게 전달할 최종 답변';
+  if (role === 'engineer') return 'Orchestrator가 검증할 수 있는 해결책과 검증 관점';
+  return 'Orchestrator가 최종 답변에 반영할 품질 검토 리포트';
 }
 
 export function fallbackOrchestratorPlan(state: RunState, reason: string, parseError?: string): OrchestratorPlan {
@@ -84,7 +84,7 @@ export function orchestratorPlanFromRoles(
   options: { strategy?: string; fallback?: boolean; parseError?: string } = {},
 ): OrchestratorPlan {
   const fallbackRoles: WorkerAgentRole[] = roles.length ? roles : ['reviewer'];
-  const finalResponder = fallbackRoles.includes('reviewer') ? 'reviewer' : fallbackRoles[fallbackRoles.length - 1];
+  const finalResponder = fallbackRoles[fallbackRoles.length - 1];
   return {
     strategy: options.strategy ?? 'linear-orchestrator',
     reason,
@@ -181,7 +181,7 @@ function appendFinalResponderIfNeeded(steps: OrchestratorStep[], finalResponder:
     {
       agent: finalResponder,
       task: defaultTaskFor(finalResponder),
-      reason: '최종 사용자 답변을 생성해야 한다.',
+      reason: 'Orchestrator 검증 후보를 마지막으로 제공해야 한다.',
       expectedOutput: defaultExpectedOutputFor(finalResponder),
     },
   ];
@@ -225,7 +225,7 @@ export function parseOrchestratorPlan(raw: string, state: RunState): Orchestrato
 
     let finalResponder: WorkerAgentRole = isWorkerRole(parsed.finalResponder) && enabled.has(parsed.finalResponder)
       ? parsed.finalResponder
-      : (enabled.has('reviewer') ? 'reviewer' : steps[steps.length - 1].agent);
+      : steps[steps.length - 1].agent;
 
     if (!enabled.has(finalResponder)) finalResponder = steps[steps.length - 1].agent;
 
@@ -277,15 +277,17 @@ export function parseOrchestratorVerdict(raw: string, state: RunState, candidate
     }
 
     const nextSteps = normalizeSteps(parsed.nextSteps, state);
+    const enabledRoles = enabledWorkerRoles(state);
+    const fallbackAgent = enabledRoles.includes('engineer') ? 'engineer' : (enabledRoles[0] ?? 'reviewer');
     return {
       status,
       reason,
       userAnswer: typeof parsed.userAnswer === 'string' ? parsed.userAnswer.trim() : undefined,
       nextSteps: nextSteps.length ? nextSteps : [{
-        agent: enabledWorkerRoles(state).includes('reviewer') ? 'reviewer' : (enabledWorkerRoles(state)[0] ?? 'reviewer'),
-        task: 'Orchestrator 검증 피드백을 반영해 후보 답변의 누락과 불명확성을 보완한다.',
+        agent: fallbackAgent,
+        task: 'Orchestrator 검증 피드백을 반영해 후보 결과의 누락과 불명확성을 보완한다.',
         reason,
-        expectedOutput: 'Orchestrator가 다시 검증할 수 있는 보완된 후보 답변',
+        expectedOutput: 'Orchestrator가 다시 검증할 수 있는 보완된 후보 결과',
       }],
     };
   } catch (error) {
@@ -355,7 +357,7 @@ export function orchestratorPlanFromVerdict(
   iteration: number,
 ): OrchestratorPlan {
   const enabled = new Set(enabledWorkerRoles(state));
-  const fallbackResponder = enabled.has('reviewer') ? 'reviewer' : verdict.nextSteps.at(-1)?.agent ?? 'reviewer';
+  const fallbackResponder = verdict.nextSteps.at(-1)?.agent ?? (enabled.has('engineer') ? 'engineer' : 'reviewer');
   const finalResponder = enabled.has(fallbackResponder) ? fallbackResponder : verdict.nextSteps.at(-1)?.agent ?? 'reviewer';
   return {
     strategy: 'orchestrator-feedback-loop',
@@ -374,7 +376,7 @@ export function formatOrchestratorAssignment(plan: OrchestratorPlan, step: Orche
     `Task: ${step.task}`,
     `Reason: ${step.reason}`,
     `Expected Output: ${step.expectedOutput}`,
-    `Final Responder: ${plan.finalResponder}`,
+    `Verification Candidate Provider: ${plan.finalResponder}`,
   ].join('\n');
 }
 
@@ -418,7 +420,7 @@ export function formatOrchestratorPlanSummary(plan: OrchestratorPlan): string {
   return [
     `Strategy: ${plan.strategy}`,
     `Reason: ${plan.reason}`,
-    `Final Responder: ${plan.finalResponder}`,
+    `Verification Candidate Provider: ${plan.finalResponder}`,
     plan.fallback ? 'Fallback: true' : 'Fallback: false',
     plan.parseError ? `Parse Error: ${plan.parseError}` : undefined,
     '',
