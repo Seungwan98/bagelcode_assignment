@@ -35,6 +35,7 @@ Primary proof points:
   - `MockAgentAdapter` for deterministic README demo.
   - `TmuxSessionAdapter` for recommended real Codex execution. It must require AgentBoard transport markers, wait for a stable idle fallback before accepting missing `AGENTBOARD_DONE`, and surface Codex permission prompts as UI approval events.
   - `CliAgentAdapter` for short one-shot Codex smoke runs only; it should not be presented as the primary real-agent path while tmux sessions exist.
+- In `cli` mode, omitted role adapter env vars default to `tmux-codex`; use `codex` only through explicit role overrides for short smoke runs.
 - User interventions are first-class messages from `user` to an agent or `all`.
 - Active runs must still accept user intervention messages; Orchestrator decides at the next checkpoint whether to continue, restart, or ask the user for clarification.
 - Reviewer is a conservative quality gate only: it reports accuracy, omissions, risks, and recommendations back to Orchestrator instead of writing the user-facing final answer.

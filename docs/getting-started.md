@@ -94,14 +94,11 @@ http://localhost:3000
 
 ```bash
 AGENTBOARD_MODE=cli \
-AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex \
-AGENTBOARD_PLANNER_ADAPTER=tmux-codex \
-AGENTBOARD_ENGINEER_ADAPTER=tmux-codex \
-AGENTBOARD_REVIEWER_ADAPTER=tmux-codex \
 AGENTBOARD_CODEX_CMD="codex --no-alt-screen" \
 npm run dev
 ```
 
+role별 adapter 환경변수를 생략하면 기본값은 모두 `tmux-codex`다.
 AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주입하므로, Codex stdout이나 tmux pane output은 adapter 출력이고 실제 대화 이력은 `.agentboard` state에 남는다. CLI mode가 실패해도 mock mode는 계속 동작해야 한다.
 
 `codex exec` one-shot 설정은 짧은 smoke 검증용 fallback이다. 긴 작업, 권한 요청, 완료 감지가 중요한 시연에는 `tmux-codex`를 사용한다.

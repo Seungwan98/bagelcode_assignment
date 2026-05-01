@@ -88,12 +88,9 @@ npm run build
 
 ```bash
 AGENTBOARD_MODE=cli \
-AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex \
-AGENTBOARD_PLANNER_ADAPTER=tmux-codex \
-AGENTBOARD_ENGINEER_ADAPTER=tmux-codex \
-AGENTBOARD_REVIEWER_ADAPTER=tmux-codex \
 AGENTBOARD_CODEX_CMD="codex --no-alt-screen" \
 npm run dev
 ```
 
+`cli` mode에서 role별 adapter 환경변수를 생략하면 기본값은 모두 `tmux-codex`입니다.
 `codex exec` 기반 one-shot adapter는 짧은 smoke 실행용 fallback으로만 사용합니다.

@@ -173,9 +173,9 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 - `TmuxSessionAdapter`: 권장 real Codex path. role별 persistent tmux session에 Codex를 유지하고, prompt마다 AgentBoard transport marker를 요구한다. 긴 prompt는 `.agentboard/runs/<runId>/tmux-prompts/` 임시 파일을 통해 `tmux load-buffer`로 주입한 뒤 삭제한다. `capture-pane` polling으로 `AGENTBOARD_DONE` marker를 감지하면 `session.completed` 이벤트를 남기고 marker를 제거한 output만 Runtime에 반환한다. DONE marker가 누락되어도 `AGENTBOARD_BEGIN` 이후 output이 있고 Codex가 idle prompt로 복귀한 뒤 같은 output이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지되어야 `completionSource=idle-prompt-fallback`으로 완료 처리한다. Codex 권한 프롬프트는 `approval.requested` event로 승격하고 Web UI 승인/거절을 `POST /api/runs/:runId/approvals`를 통해 다시 tmux pane에 주입한다.
 - `CliAgentAdapter`: short fallback. 로컬 `codex exec` 같은 one-shot command를 `shell: false`로 실행하고 stdout을 runtime에 반환한다. 긴 작업이나 권한 prompt가 필요한 시연에서는 primary path로 쓰지 않는다.
 
-CLI mode 권장 role 매핑:
+CLI mode 기본 role 매핑:
 
-| Role | 권장 adapter | command env |
+| Role | 기본 adapter | command env |
 | --- | --- | --- |
 | `orchestrator` | `tmux-codex` | `AGENTBOARD_CODEX_CMD` + `AGENTBOARD_TMUX_CMD` |
 | `planner` | `tmux-codex` | `AGENTBOARD_CODEX_CMD` + `AGENTBOARD_TMUX_CMD` |
