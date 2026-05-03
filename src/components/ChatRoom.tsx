@@ -905,9 +905,6 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
   }
 
   function renderAgentPanel(agent: AgentState, options: { expanded?: boolean } = {}) {
-    const latestAssignment = messages
-      .filter((message) => message.from === 'orchestrator' && message.to === agent.id && message.kind === 'instruction')
-      .at(-1);
     const sentCount = messages.filter((message) => message.from === agent.id).length;
     const receivedCount = messages.filter((message) => message.to === agent.id).length;
     const isWorking = agent.status === 'thinking' || agent.status === 'waiting';
@@ -918,7 +915,7 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
 
     return (
       <article
-        className={`agent-panel ${agent.role} ${agent.status} ${latestAssignment ? 'has-assignment' : ''} ${options.expanded ? 'expanded' : ''}`}
+        className={`agent-panel ${agent.role} ${agent.status} ${options.expanded ? 'expanded' : ''}`}
         key={options.expanded ? `expanded-${agent.id}` : agent.id}
       >
         <header className="agent-panel-header">
@@ -977,18 +974,6 @@ export function ChatRoom({ initialState, runId, onNewChat, onRunUpdated, variant
             <dd>{formatTime(session?.lastCompletedAt ?? session?.lastInjectedAt ?? session?.updatedAt)}</dd>
           </div>
         </dl>
-
-        {latestAssignment ? (
-          <button
-            className="assignment-card"
-            onClick={() => setSelectedLogId(latestAssignment.id)}
-            type="button"
-          >
-            <span>Orchestrator assigned</span>
-            <strong>{actorLabel(agentMap, latestAssignment.to)}에게 전달된 작업</strong>
-            <p>{latestAssignment.body}</p>
-          </button>
-        ) : null}
 
         <div className="agent-panel-feed" aria-label={`${agent.displayName} 메시지`}>
           {feedItems.length ? (
