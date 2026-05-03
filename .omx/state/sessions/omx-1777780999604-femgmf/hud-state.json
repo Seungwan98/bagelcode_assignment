@@ -1,6 +1,6 @@
 {
-  "last_turn_at": "2026-05-03T08:37:32.205Z",
-  "last_progress_at": "2026-05-03T08:37:32.205Z",
-  "turn_count": 42,
-  "last_agent_output": "이 프로젝트에는 로그가 두 종류 있습니다.\n\n1. **OMX / AI 개발 과정 세션 로그**\n   - 과제 제출 증거용으로 포함하려는 로그\n   - 위치:\n     ```text"
+  "last_turn_at": "2026-05-03T08:41:13.285Z",
+  "last_progress_at": "2026-05-03T08:41:13.285Z",
+  "turn_count": 44,
+  "last_agent_output": "README에 명시했습니다.\n\n추가 위치:\n- `README.md`\n- 새 섹션: `## Session Logs`\n\n내용:\n- 제출용 AI 개발 과정 로그:\n  ```text\n  "
 }

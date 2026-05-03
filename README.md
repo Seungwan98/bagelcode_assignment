@@ -193,6 +193,40 @@ npm run qa:e2e:tmux
 
 `.agentboard/`, `.env.local`, build output, dependency folders는 `.gitignore` 대상입니다.
 
+## Session Logs
+
+제출용 AI 개발 과정 로그는 `.omx/`에 포함되어 있습니다.
+
+```text
+.omx/logs/                         # OMX turn, hook, team dispatch/delivery logs
+.omx/context/                      # 작업 context snapshot
+.omx/plans/                        # 초기 Web/tmux plan과 기술 명세
+.omx/reports/team-commit-hygiene/  # team 실행/검증 report
+.omx/state/team/                   # team mailbox와 worker 진행 상태
+.omx/skills/                       # 프로젝트에 사용한 Codex/OMX skills
+```
+
+평가자가 먼저 보기 좋은 파일:
+
+```text
+.omx/README.md
+.omx/logs/turns-2026-05-03.jsonl
+.omx/logs/omx-2026-05-03.jsonl
+.omx/reports/team-commit-hygiene/
+.omx/plans/
+```
+
+웹앱을 실행하면서 새로 생기는 AgentBoard run 로그는 로컬 실행 산출물이므로 기본 제출 대상이 아닙니다.
+
+```text
+.agentboard/runs/<runId>/events.jsonl
+.agentboard/runs/<runId>/messages.jsonl
+.agentboard/runs/<runId>/artifacts/final-report.md
+.agentboard/workspaces/<runId>/
+```
+
+브라우저에서는 실행 화면 우측 상단 `Logs` 버튼으로 같은 Agent 간 handoff와 event 흐름을 확인할 수 있습니다.
+
 ## API Surface
 
 주요 API:
