@@ -207,6 +207,27 @@ coverage/
 logs/
 ```
 
+예외적으로 과제 제출에서는 GitHub 평가자가 AI agent 사용 과정과 세션 로그를 확인할 수 있도록 `.omx/` 전체를 commit 대상으로 둔다.
+
+```text
+.omx/
+```
+
+포함 의도:
+
+- `.omx/logs/` — OMX session, hook, turn log
+- `.omx/context/` — 작업 맥락 snapshot
+- `.omx/plans/` — 초기 Web/tmux plan 및 기술 명세
+- `.omx/reports/` — team 실행/commit hygiene report
+- `.omx/state/team/` — team mailbox와 worker 진행 증거
+- `.omx/skills/` — 프로젝트에서 사용한 `korean-git-commit`, `sync-project-docs` skill
+
+주의:
+
+- `.omx/`를 commit하기 전 secret scan을 실행한다.
+- `.env.local`, service-account JSON, 실제 API key는 여전히 commit하지 않는다.
+- `.agentboard/` run store는 로컬 실행 산출물이므로 계속 ignore한다.
+
 ## Commit message config
 
 커밋 메시지는 한글 기반 `[Type]` 형식을 사용한다.
@@ -215,4 +236,19 @@ logs/
 [Feat] 첫 번째 커밋
 [Docs] 설정 문서 정리
 [Chore] 로컬 비밀값 ignore 처리
+```
+
+레포에는 커밋 메시지 검증 skill과 문서 최신화 skill을 함께 둔다.
+
+```bash
+python3 .omx/skills/korean-git-commit/scripts/validate_commit_message.py --text "[Feat] 첫 번째 커밋"
+python3 .omx/skills/sync-project-docs/scripts/audit_project_docs.py .
+```
+
+Codex에서 skill로 바로 쓰려면 로컬 Codex skill 경로에 복사한다.
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R .omx/skills/korean-git-commit ~/.codex/skills/
+cp -R .omx/skills/sync-project-docs ~/.codex/skills/
 ```

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "last_triage": {
+    "lane": "LIGHT",
+    "destination": "explore",
+    "reason": "question_or_explanation",
+    "prompt_signature": "sha256:e1252b0a466dc4fb0bf0f15e1b0b083c7813790e4d33202977f63ceae6de0b31",
+    "turn_id": "019de73d-e399-7081-8a45-e2fce77d8978",
+    "created_at": "2026-05-02T05:51:26.801Z"
+  },
+  "suppress_followup": true
+}

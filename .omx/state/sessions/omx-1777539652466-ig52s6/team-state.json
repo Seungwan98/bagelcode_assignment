@@ -1,0 +1,73 @@
+{
+  "active": false,
+  "mode": "team",
+  "iteration": 3,
+  "max_iterations": 50,
+  "current_phase": "cancelled",
+  "task_description": "Implement AgentBoard session persistence MVP. Use the context snapshot .omx/context/session-persistence-20260430T134043Z.md. Split work into: (1) local session store/types/API and run association, (2) landing resume UI plus ChatRoom per-run UI state persistence, (3) tests/docs/verification. Preserve existing mock/CLI behavior, no new deps, run typecheck/tests/build/audit, commit with Korean [Type] convention when done.",
+  "started_at": "2026-04-30T13:44:30.517Z",
+  "tmux_pane_id": "%36",
+  "tmux_pane_set_at": "2026-04-30T13:44:30.517Z",
+  "team_name": "implement-agentboard-session-p",
+  "agent_count": 3,
+  "agent_types": "executor",
+  "available_agent_types": [
+    "analyst",
+    "api-reviewer",
+    "architect",
+    "build-fixer",
+    "code-reviewer",
+    "code-simplifier",
+    "critic",
+    "debugger",
+    "dependency-expert",
+    "designer",
+    "executor",
+    "explore",
+    "explore-harness",
+    "git-master",
+    "information-architect",
+    "performance-reviewer",
+    "planner",
+    "product-analyst",
+    "product-manager",
+    "qa-tester",
+    "quality-reviewer",
+    "quality-strategist",
+    "researcher",
+    "security-reviewer",
+    "sisyphus-lite",
+    "style-reviewer",
+    "team-executor",
+    "team-orchestrator",
+    "test-engineer",
+    "ux-researcher",
+    "verifier",
+    "vision",
+    "writer"
+  ],
+  "staffing_summary": "researcher x1 (primary delivery lane, high reasoning); test-engineer x1 (verification + regression lane, medium reasoning); build-fixer x1 (specialist support lane, high reasoning)",
+  "staffing_allocations": [
+    {
+      "role": "researcher",
+      "count": 1,
+      "reason": "primary delivery lane",
+      "reasoningEffort": "high"
+    },
+    {
+      "role": "test-engineer",
+      "count": 1,
+      "reason": "verification + regression lane",
+      "reasoningEffort": "medium"
+    },
+    {
+      "role": "build-fixer",
+      "count": 1,
+      "reason": "specialist support lane",
+      "reasoningEffort": "high"
+    }
+  ],
+  "run_outcome": "continue",
+  "last_turn_at": "2026-04-30T13:44:52.408Z",
+  "completed_at": "2026-04-30T13:57:59.837Z"
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "active": true,
+  "skill": "team",
+  "keyword": "$team",
+  "phase": "integration-fix",
+  "activated_at": "2026-04-30T13:40:12.719Z",
+  "updated_at": "2026-04-30T13:47:35.522Z",
+  "source": "keyword-detector",
+  "session_id": "019ddd9f-1291-7f53-a2cb-41fcce28469e",
+  "turn_id": "019dde9e-238a-7041-84f2-055e252d8e10",
+  "active_skills": [
+    {
+      "skill": "team",
+      "phase": "integration-fix",
+      "active": true,
+      "activated_at": "2026-04-30T13:40:12.719Z",
+      "updated_at": "2026-04-30T13:47:35.522Z"
+    },
+    {
+      "skill": "team",
+      "phase": "planning",
+      "active": true,
+      "activated_at": "2026-04-30T09:08:09.851Z",
+      "updated_at": "2026-04-30T13:39:59.095Z",
+      "session_id": "019ddd9f-1291-7f53-a2cb-41fcce28469e",
+      "turn_id": "019dde9e-238a-7041-84f2-055e252d8e10"
+    }
+  ],
+  "initialized_mode": "team",
+  "initialized_state_path": ".omx/state/team-state.json"
+}

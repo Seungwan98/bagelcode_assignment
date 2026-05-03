@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-01T05:50:17.581Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-05-01T05:50:17.581Z",
+  "last_agent_output": "구현 대상: `SwiftUI + MVVM` Todo MVP\n\n구성 파일:\n\n```text\nTodoMVP/\n├─ TodoMVPApp.swift\n├─ Models/\n│  └─ Todo"
+}

@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "team_name": "implement-agentboard-web-dashb",
+  "updated_at": "2026-04-30T10:01:46.674Z",
+  "runtime_commits_are_scaffolding": true,
+  "entries": [
+    {
+      "recorded_at": "2026-04-30T09:49:01.433Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "5b95ff7144964b81ea5e45b6891e8d9bb8accc7a",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:50:23.732Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "f78f5f8dd384464c4e3fa907fa0117a9ef5cd0d8",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:50:23.849Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-4",
+      "status": "applied",
+      "operational_commit": "97ac6b91c43aa12767499d3a33abedb002fedfc4",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-4",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:52:10.306Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "d8a59a7eecaeaec3493fab342699c4d3e5631509",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:53:18.612Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "bb09de9f87c18362e3e9db3a211316de54883849",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:53:18.723Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-3",
+      "status": "applied",
+      "operational_commit": "00f0f6c85a2a7483c2a4e3e761a507be1256071c",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-3",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:53:37.010Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "a68c8990f58528be465515b93a893967d6c4fa1c",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:54:20.915Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "f04b077f59bcf253db5f2124b728aeae13d3ede2",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:57:38.979Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "d33a5a8de0ee134bd767487e2420f74242c0cbe7",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T09:59:52.466Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "8bfe6d1a0654f6493e05d14bb418ff12d7e28c86",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T10:00:40.334Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "1816823f02eb33f85de8ef05bea5fdb64a72700d",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T10:01:24.742Z",
+      "operation": "auto_checkpoint",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "applied",
+      "operational_commit": "2b146696b1838208c1de33d19f807256d9009c4d",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "detail": "Dirty worker worktree checkpointed before runtime integration."
+    },
+    {
+      "recorded_at": "2026-04-30T10:01:46.674Z",
+      "operation": "shutdown_merge",
+      "worker_name": "worker-1",
+      "task_id": "1",
+      "status": "conflict",
+      "operational_commit": null,
+      "source_commit": "2b146696b1838208c1de33d19f807256d9009c4d",
+      "leader_head_before": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "leader_head_after": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1",
+      "report_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-1/.omx/diff.md",
+      "detail": "error: Your local changes to the following files would be overwritten by merge:\n\tdocs/getting-started.md\n\tdocs/test-writing-guide.md\n\tdocs/troubleshooting.md\nPlease commit your changes or stash them before you merge.\nerror: The following untracked working tree files would be overwritten by merge:\n\tREADME.md\n\tnext-env.d.ts\n\tpackage-lock.json\n\tpackage.json\n\tsrc/app/api/runs/[runId]/control/route.ts\n\tsrc/app/api/runs/[runId]/events/route.ts\n\tsrc/app/api/runs/[runId]/interventions/route.ts\n\tsrc/app/api/runs/[runId]/route.ts\n\tsrc/app/api/runs/route.ts\n\tsrc/app/globals.css\n\tsrc/app/layout.tsx\n\tsrc/app/page.tsx\n\tsrc/app/runs/[runId]/page.tsx\n\ttests/jsonl.test.ts\n\ttests/message-bus.test.ts\n\ttests/mock-runner.test.ts\n\ttsconfig.json\nPlease move or remove them before you merge.\nAborting\nMerge with strategy ort failed."
+    },
+    {
+      "recorded_at": "2026-04-30T10:01:46.674Z",
+      "operation": "shutdown_merge",
+      "worker_name": "worker-2",
+      "task_id": "2",
+      "status": "noop",
+      "operational_commit": null,
+      "source_commit": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "leader_head_before": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "leader_head_after": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-2",
+      "report_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-2/.omx/diff.md",
+      "detail": "source already reachable from leader HEAD"
+    },
+    {
+      "recorded_at": "2026-04-30T10:01:46.674Z",
+      "operation": "shutdown_merge",
+      "worker_name": "worker-3",
+      "status": "conflict",
+      "operational_commit": null,
+      "source_commit": "b1d7bf9eaf996997a7738a6def6355096f6c6f48",
+      "leader_head_before": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "leader_head_after": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-3",
+      "report_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-3/.omx/diff.md",
+      "detail": "error: The following untracked working tree files would be overwritten by merge:\n\tsrc/app/globals.css\n\tsrc/app/layout.tsx\n\tsrc/app/page.tsx\n\tsrc/app/runs/[runId]/page.tsx\n\tsrc/components/AgentCardList.tsx\n\tsrc/components/ArtifactPanel.tsx\n\tsrc/components/EventTimeline.tsx\n\tsrc/components/InterventionComposer.tsx\n\tsrc/components/RunCreateForm.tsx\nPlease move or remove them before you merge.\nAborting\nMerge with strategy ort failed."
+    },
+    {
+      "recorded_at": "2026-04-30T10:01:46.674Z",
+      "operation": "shutdown_merge",
+      "worker_name": "worker-4",
+      "status": "conflict",
+      "operational_commit": null,
+      "source_commit": "9a151c9813f7696a61580c67d9f42a85113d8e4a",
+      "leader_head_before": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "leader_head_after": "eb34c947e0be44fa436f06d43196c446e745ae5a",
+      "worktree_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-4",
+      "report_path": "/Users/seungwan/bagelcode/.omx/team/implement-agentboard-web-dashb/worktrees/worker-4/.omx/diff.md",
+      "detail": "error: Your local changes to the following files would be overwritten by merge:\n\tdocs/getting-started.md\n\tdocs/test-writing-guide.md\n\tdocs/troubleshooting.md\nPlease commit your changes or stash them before you merge.\nerror: The following untracked working tree files would be overwritten by merge:\n\tREADME.md\n\tpackage-lock.json\n\tpackage.json\n\ttests/jsonl.test.ts\n\ttests/message-bus.test.ts\n\ttests/mock-runner.test.ts\n\ttsconfig.json\nPlease move or remove them before you merge.\nAborting\nMerge with strategy ort failed."
+    }
+  ]
+}

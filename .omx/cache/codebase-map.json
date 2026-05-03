@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "worktreeRoot": "/Users/seungwan/bagelcode",
+  "gitDir": "/Users/seungwan/bagelcode/.git",
+  "indexMtimeMs": 1777709984208.96,
+  "indexSize": 6633,
+  "map": "  src/app/: route, route, route, route, route, route, route, route, route, layout\n  src/components/: ChatRoom, ChatWorkspace\n  src/lib/: message-bus, types, agent-config, agent-definitions, agent-managers, agent-prompt-builder, agent-session-runtime, cli-agent-adapter, cli-runner, continuation-watchdog\n  scripts/: agentboard-cli-smoke\n  tests/: agent-session-runtime.test, cli-agent-adapter.test, cli-runner.test, continuation-watchdog.test, agentboard-real-adapter.spec, agentboard.spec, jsonl.test, message-bus.test, mock-runner.test, session-api.test\n  (root): next-env.d, next.config, playwright.config",
+  "createdAt": "2026-05-03T04:03:53.161Z"
+}

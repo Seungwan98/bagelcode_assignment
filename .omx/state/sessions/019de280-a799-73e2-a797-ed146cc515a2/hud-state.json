@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-01T07:46:31.019Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-05-01T07:46:31.019Z",
+  "last_agent_output": "아래는 SwiftUI 기준의 간단한 Mock MVVM 예제입니다. 파일 단위로 그대로 나눠서 만들면 됩니다.\n\n### `User.swift`\n\n```swift\nimport Foun"
+}

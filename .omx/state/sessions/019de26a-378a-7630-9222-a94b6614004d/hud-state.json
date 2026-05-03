@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-01T07:22:02.743Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-05-01T07:22:02.743Z",
+  "last_agent_output": "아래 구조로 SwiftUI 기반 MVVM MVP를 시작하면 됩니다. MVP 단계에서는 `View`, `ViewModel`, `Model`만 분리하고, `Repository`, `C"
+}

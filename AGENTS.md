@@ -62,6 +62,20 @@ Required docs:
 - `docs/troubleshooting.md` — 자주 발생하는 문제와 해결 방법.
 - `docs/extending.md` — 기능 확장 방법 및 구조 설명.
 
+Reusable project skills are mirrored under `.omx/skills/` for GitHub reviewers:
+
+- `.omx/skills/korean-git-commit` — Korean-first commit message workflow.
+- `.omx/skills/sync-project-docs` — AGENTS.md and docs synchronization workflow.
+
+For assignment submission, `.omx/` is intentionally committed as evidence of AI-agent usage:
+
+- `.omx/logs/` — session and hook logs.
+- `.omx/context/` and `.omx/plans/` — planning artifacts.
+- `.omx/reports/` and `.omx/state/team/` — team execution evidence.
+- `.omx/skills/` — reusable project skills.
+
+Do not add real secrets to `.omx/`; scan before committing.
+
 ## Git and commit policy
 
 This repository may start without git initialized. Commit rules are summarized in `docs/configuration.md` and must use the Korean-first `[Type]` format.
@@ -69,7 +83,7 @@ This repository may start without git initialized. Commit rules are summarized i
 Minimum commit hygiene:
 
 1. Inspect changes before committing: `git status --short && git diff --check`.
-2. Do not commit generated run state, local secret config, service accounts, `.env.local`, build artifacts, dependency folders, or runtime logs.
+2. Do not commit generated AgentBoard run state, local secret config, service accounts, `.env.local`, build artifacts, dependency folders, or non-OMX runtime logs. `.omx/` is the assignment evidence exception.
 3. Keep commits small and evidence-focused.
 4. Use Korean-first commit messages with one English type tag, e.g. `[Feat] 첫 번째 커밋`.
 5. Use English only for the tag, commands, file paths, package names, and unavoidable technical identifiers.

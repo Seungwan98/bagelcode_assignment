@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-04-30T16:52:48.494Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-04-30T16:52:48.494Z",
+  "last_agent_output": "{\n  \"strategy\": \"dynamic-orchestrator\",\n  \"reason\": \"사용자는 을왕리 1박 2일 여행 코스를 요청했으며, 숙소 유형, 이동수단, 동행자, "
+}

@@ -13,6 +13,7 @@
 - macOS/Linux 권장
 
 Mock mode는 외부 key 또는 Codex CLI 없이 실행되어야 한다.
+따라서 기본 mock demo만 확인할 때는 `.env.local`을 만들 필요가 없다.
 
 ## 설치
 
@@ -93,11 +94,28 @@ http://localhost:3000
 
 실제 AI CLI 연동은 기본 실행 경로가 아니다. 로컬에 Codex와 tmux가 있고 환경변수를 설정한 뒤 사용한다. 실제 시연은 `tmux-codex`를 권장한다.
 
+먼저 예시 파일을 로컬 설정으로 복사한다. `.env.local`은 `.gitignore` 대상이다.
+
+```bash
+cp .env.example .env.local
+```
+
+복사한 `.env.local`에서 `AGENTBOARD_MODE=cli`와 Codex/tmux 값을 설정한다.
+
 권장 예시:
 
 ```bash
-AGENTBOARD_MODE=cli \
-AGENTBOARD_CODEX_CMD="codex --no-alt-screen" \
+AGENTBOARD_MODE=cli
+AGENTBOARD_CODEX_CMD="codex --no-alt-screen"
+AGENTBOARD_ORCHESTRATOR_ADAPTER=tmux-codex
+AGENTBOARD_PLANNER_ADAPTER=tmux-codex
+AGENTBOARD_ENGINEER_ADAPTER=tmux-codex
+AGENTBOARD_REVIEWER_ADAPTER=tmux-codex
+```
+
+설정을 저장한 뒤 서버를 실행한다.
+
+```bash
 npm run dev
 ```
 

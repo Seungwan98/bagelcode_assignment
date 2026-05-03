@@ -24,6 +24,8 @@ npm install
 npm run dev
 ```
 
+기본 `mock` demo는 `.env.local`을 만들지 않아도 실행됩니다.
+
 브라우저에서 접속합니다.
 
 ```text
@@ -106,7 +108,7 @@ Append-only Local Store
 cp .env.example .env.local
 ```
 
-`.env.local`에서 최소한 아래처럼 설정합니다.
+복사한 `.env.local`에서 최소한 아래처럼 `AGENTBOARD_MODE=cli`로 바꿉니다.
 
 ```env
 AGENTBOARD_MODE=cli

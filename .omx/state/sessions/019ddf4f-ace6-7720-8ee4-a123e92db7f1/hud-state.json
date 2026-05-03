@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-04-30T16:54:05.428Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-04-30T16:54:05.428Z",
+  "last_agent_output": "{\n  \"strategy\": \"dynamic-orchestrator\",\n  \"reason\": \"사용자는 Flutter 앱을 기획 단계부터 MVP까지 구체화해달라고 요청했으며, 현재"
+}

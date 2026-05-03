@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-01T05:50:45.371Z",
+  "turn_count": 1,
+  "last_progress_at": "2026-05-01T05:50:45.371Z",
+  "last_agent_output": "아래 코드 그대로 Xcode의 새 `SwiftUI App` 프로젝트에 파일별로 넣으면 됩니다.  \n구조는 `SwiftUI + MVVM`, 저장은 `UserDefaults + Cod"
+}

@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-02T18:31:23.012Z",
+  "last_progress_at": "2026-05-02T18:31:23.012Z",
+  "turn_count": 66,
+  "last_agent_output": "맞아요. **직전 커밋 대비 느려진 건 최근 tmux submit 로직 변경 영향이 맞습니다.**\n\n원인:\n\n1. `file-reference` 방식 추가  \n   - 전체 pro"
+}

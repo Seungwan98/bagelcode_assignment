@@ -47,5 +47,9 @@ firebase-debug.log
 !.vscode/extensions.json
 !.vscode/settings.example.json
 
-# OMX runtime state (local orchestration only)
-.omx/
+# OMX submission evidence
+# .omx/ is intentionally trackable so reviewers can inspect session logs,
+# team reports, plans, and project-bundled skills.
+!.omx/
+!.omx/**
+.omx/**/.DS_Store

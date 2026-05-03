@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Project Docs"
+  short_description: "AGENTS.md와 docs/를 변경사항에 맞춰 최신화"
+  default_prompt: "Use sync-project-docs to update AGENTS.md and docs/ after architecture, spec, workflow, config, or commit-rule changes."
