@@ -280,10 +280,28 @@ function normalizeDeliverableType(value: unknown, fallback: DeliverableType): De
 }
 
 function extractListSection(raw: string, label: string): string[] {
+  const sectionLabels = ['changedFiles', 'commandsRun', 'testResults', 'remainingRisks', 'workspaceFiles', 'reportedChangedFiles'];
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = raw.match(new RegExp(`${escapedLabel}\\s*[:：]\\s*([\\s\\S]*?)(?:\\n\\s*(?:changedFiles|commandsRun|testResults|remainingRisks|workspaceFiles)\\s*[:：]|$)`, 'i'));
-  if (!match?.[1]) return [];
-  return match[1]
+  const targetLabelPattern = new RegExp(`^${escapedLabel}\\s*(?:[:：]\\s*(.*))?$`, 'i');
+  const anyLabelPattern = new RegExp(`^(?:${sectionLabels.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\s*(?:[:：]\\s*.*)?$`, 'i');
+  const collected: string[] = [];
+  let collecting = false;
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!collecting) {
+      const match = trimmed.match(targetLabelPattern);
+      if (!match) continue;
+      collecting = true;
+      if (match[1]?.trim()) collected.push(match[1].trim());
+      continue;
+    }
+
+    if (anyLabelPattern.test(trimmed)) break;
+    collected.push(line);
+  }
+
+  return collected.join('\n')
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
     .map((line) => line.replace(/^["'`]|["'`,]$/g, '').trim())

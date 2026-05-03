@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { sendMessage } from '../src/lib/bus/message-bus';
 import { getAgentDefinition } from '../src/lib/runner/agent-definitions';
 import { buildAgentPrompt, createAgentExecutionContext, runAgentConversation } from '../src/lib/runner/agent-session-runtime';
-import { parseOrchestratorPlan, parseOrchestratorVerdict } from '../src/lib/runner/orchestrator-plan';
+import { implementationEvidenceFromText, parseOrchestratorPlan, parseOrchestratorVerdict } from '../src/lib/runner/orchestrator-plan';
 import { createLinearOrchestratorStrategy } from '../src/lib/runner/orchestrator-strategy';
 import { createRun, readEvents, readMessages, readState } from '../src/lib/store/file-store';
 
@@ -459,6 +459,43 @@ test('implementation deliverables require changed files and verification evidenc
   assert.deepEqual(missingEvidence.nextSteps.map((step) => step.agent), ['engineer']);
   assert.equal(completeWithEvidence.status, 'complete');
 }));
+
+test('implementation evidence parser accepts heading sections without colons', () => {
+  const raw = [
+    '구현 증거 보강 완료: SwiftUI Mock 앱이 ViewModel 4개 규모로 구성되어 있음을 재확인했다.',
+    '',
+    'changedFiles',
+    '',
+    '  - .agentboard/workspaces/run/Sources/TaskBoardMockApp/ViewModels/DashboardViewModel.swift',
+    '  - .agentboard/workspaces/run/Sources/TaskBoardMockApp/ViewModels/TaskFilterViewModel.swift',
+    '',
+    'commandsRun',
+    '',
+    '  - HOME=$PWD/.tmp-home CLANG_MODULE_CACHE_PATH=$PWD/.clang-module-cache swift',
+    '    test --scratch-path .swiftpm-cache',
+    '  - find Sources/TaskBoardMockApp/ViewModels Tests/TaskBoardMockAppTests -type f | sort',
+    '',
+    'testResults',
+    '',
+    '  - swift test 통과.',
+    '  - XCTest DashboardViewModelTests: 4 tests, 0 failures.',
+    '',
+    'remainingRisks',
+    '',
+    '  - 실제 iOS Simulator UI 실행은 수행하지 않았다.',
+  ].join('\n');
+
+  const evidence = implementationEvidenceFromText(raw, '/tmp/workspace');
+
+  assert.equal(evidence.reportedChangedFiles.length, 2);
+  assert.equal(evidence.commandsRun.length, 3);
+  assert.equal(evidence.testResults.length, 2);
+  assert.deepEqual(evidence.reportedChangedFiles, [
+    '.agentboard/workspaces/run/Sources/TaskBoardMockApp/ViewModels/DashboardViewModel.swift',
+    '.agentboard/workspaces/run/Sources/TaskBoardMockApp/ViewModels/TaskFilterViewModel.swift',
+  ]);
+  assert.match(evidence.testResults.join('\n'), /4 tests, 0 failures/);
+});
 
 test('agent conversation runtime returns partial answer with risk after max incomplete verdicts', async () => withStateDir(async () => {
   const previousMax = process.env.AGENTBOARD_ORCHESTRATOR_MAX_VERIFICATION_ITERATIONS;
