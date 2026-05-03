@@ -72,6 +72,7 @@ Orchestrator Codex session -> selected Agent session(s) -> implementation eviden
 - 사용자 입력을 shell command string에 직접 붙이지 않는다.
 - CLI output은 adapter log와 AgentBoard structured message로 나눠 저장한다.
 - implementation 요청은 `.agentboard/workspaces/<runId>/` 변경 파일과 검증 결과를 남기도록 한다.
+- 사용자에게 보여줄 산출물은 `final-report.md`, `messages.jsonl` timeline, workspace 파일 preview의 세 계층으로 유지한다.
 - 실패 시 `error` event를 남긴다.
 
 추가 설정이 필요한 CLI는 command spec에 인자를 포함하되, 실제 시연 기본값은 persistent tmux session에 맞춘다.
@@ -107,13 +108,17 @@ Agent 간 메시지를 graph로 보여주는 기능.
 
 ### Approval gate
 
-`tmux-codex`는 Codex 권한 프롬프트를 감지하면 `approval.requested` event를 기록하고, ChatRoom의 해당 Agent 채팅창에 승인/거절 카드를 표시한다. UI는 `POST /api/runs/<runId>/approvals`로 승인 상태를 전달하고, adapter가 tmux pane에 `Enter` 또는 `Escape`를 주입한다.
+`tmux-codex`는 Codex 권한 프롬프트를 감지하면 `approval.requested` event를 기록하고, ChatRoom의 해당 Agent 채팅창에 승인/거절 카드를 시간순 feed item으로 표시한다. UI는 `POST /api/runs/<runId>/approvals`로 승인 상태를 전달하고, adapter가 tmux pane에 `Enter` 또는 `Escape`를 주입한다.
+
+반복 검증 명령은 `AGENTBOARD_AUTO_APPROVE_COMMANDS` allowlist로 자동 승인할 수 있다. 일치한 경우에도 `approval.requested`와 `approval.approved` event를 모두 남기며, 승인 event payload에는 `source: "auto"`와 `matchedCommandPattern`을 기록한다.
 
 확장 시 유지할 규칙:
 
 - 승인 요청은 `approvalId`로 dedupe/resolution을 연결한다.
 - 승인 대기 중 Agent status는 `waiting`으로 보여준다.
-- 자동 승인은 별도 allowlist 정책이 생기기 전까지 추가하지 않는다.
+- 자동 승인 allowlist는 테스트/타입체크처럼 안전하고 반복적인 명령에만 사용한다.
+- 사용자-facing card는 승인/거절 버튼만 보여주고, Codex 원본 선택지 텍스트는 raw log payload에 유지한다.
+- 상단 pending badge는 가장 최근 pending approval이 있는 Agent 확대 화면으로 이동해야 한다.
 
 ## 새 API route 추가
 
@@ -123,6 +128,8 @@ Agent 간 메시지를 graph로 보여주는 기능.
 - event log에 어떤 event를 남기는가?
 - 실패 응답 구조는 일관적인가?
 - Chat UI에서 재시도 가능한가?
+- workspace 파일 route라면 상대 경로만 허용하고 path traversal을 거부하는가?
+- run 삭제 정책을 바꾼다면 `.agentboard/workspaces/<runId>/` 정리 여부도 함께 검토했는가?
 
 권장 에러 응답:
 

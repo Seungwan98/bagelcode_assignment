@@ -46,7 +46,7 @@ http://localhost:3000
 3. 실행 모드는 `mock`을 선택한다.
 4. `전송` 버튼을 누른다.
 5. 새 run이 좌측 세션 목록에 추가되고 중앙 채팅 영역에서 선택되는지 확인한다.
-6. 4분할 Agent 채팅 패널과 `Logs` 버튼에서 다음 흐름을 확인하고, log 항목을 눌러 전체 payload를 팝업으로 확인한다.
+6. 4분할 Agent 채팅 패널과 `Logs` 버튼에서 다음 흐름을 확인하고, log 항목을 눌러 전체 payload를 팝업으로 확인한다. Logs 필터로 Agent 전달, 권한 요청, 오류/timeout, tmux session 이벤트만 좁혀볼 수 있다.
    - `run.started`
    - `orchestrator -> agent` 업무 배정 메시지
    - 필요한 경우 `planner -> engineer` 또는 `engineer -> reviewer` handoff 메시지
@@ -55,8 +55,9 @@ http://localhost:3000
 7. Orchestrator/Planner/Engineer/Reviewer 패널에서 각 Agent의 상태, 최근 메시지, 최근 이벤트를 확인한다.
 8. 답변 생성 중 하단 입력창이 계속 활성화되고 `개입 보내기`, `현재 작업 취소` 버튼이 보이는지 확인한다.
 9. 진행 중 `모바일 조건도 추가해줘` 같은 추가 지시를 보내 Orchestrator 패널과 Logs에 개입 판단이 남는지 확인한다.
-10. 답변이 완료되면 같은 입력창에 다음 질문을 보내 Orchestrator → User 최종 답변이 추가되는지 확인한다.
-11. 취소 테스트가 필요하면 `현재 작업 취소`를 눌러 status가 `stopped`로 바뀌는지 확인한다.
+10. 답변이 완료되면 `산출물` 버튼에서 Final Report, Messages, Workspace 탭을 확인한다.
+11. 같은 입력창에 다음 질문을 보내 Orchestrator → User 최종 답변이 추가되는지 확인한다.
+12. 취소 테스트가 필요하면 `현재 작업 취소`를 눌러 status가 `stopped`로 바뀌는지 확인한다.
 
 ## Session resume 확인
 
@@ -112,11 +113,13 @@ AgentBoard가 저장된 메시지 이력을 다음 Agent prompt context로 주�
 - 4분할 Agent 채팅 패널에서 2개 이상의 agent가 보인다.
 - 각 Agent 패널에서 현재 상태, 최근 활동, session 상태가 보인다.
 - Agent 간 메시지 전달 과정이 각 Agent 패널과 Logs drawer에 표시된다.
-- `tmux-codex` 권한 요청이 발생하면 해당 Agent 패널에 승인/거절 카드가 표시된다.
+- `tmux-codex` 권한 요청이 발생하면 해당 Agent 메시지 feed 하단 부근에 승인/거절 카드가 표시된다.
+- 상단 `승인 요청` badge를 누르면 pending 요청이 있는 Agent 확대 화면으로 바로 이동한다.
 - 완료/중단된 대화를 좌측 세션 목록에서 삭제할 수 있다.
 - 답변 생성 중에도 추가 지시를 보낼 수 있고 Orchestrator가 개입 처리 방식을 판단한다.
 - 실제 구현 요청은 workspace 변경 파일과 검증 결과가 있어야 완료 처리된다.
+- `산출물` 패널에서 final-report, messages timeline, workspace 파일 목록/preview를 확인할 수 있다.
 - 진행 중에는 별도 `현재 작업 취소` 버튼으로 즉시 중단할 수 있다.
 - 답변 완료 뒤 같은 채팅방에서 다음 요청을 보낼 수 있다.
 - 취소하면 run이 `stopped` 상태로 바뀌고 다시 요청을 보낼 수 있다.
-- Logs 안에서 실행 요약 artifact를 볼 수 있다.
+- Logs 안에서 실행 요약 artifact를 열 수 있고, 상단 `산출물` 버튼에서도 같은 결과를 볼 수 있다.

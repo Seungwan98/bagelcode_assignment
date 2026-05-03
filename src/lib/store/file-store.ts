@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   AgentMessage,
   AgentRole,
@@ -34,6 +34,19 @@ const DEFAULT_STALE_RUN_AFTER_MS = 15 * 60 * 1000;
 const DEFAULT_CONTINUATION_IDLE_TIMEOUT_MS = 15_000;
 const DEFAULT_CONTINUATION_MAX_ITERATIONS = 5;
 const TERMINAL_RUN_STATUSES = new Set<Run['status']>(['completed', 'failed', 'stopped', 'stale']);
+const MAX_WORKSPACE_FILES = 200;
+const MAX_WORKSPACE_FILE_PREVIEW_BYTES = 512 * 1024;
+
+export interface WorkspaceFileEntry {
+  path: string;
+  size: number;
+  updatedAt: string;
+}
+
+export interface WorkspaceFilePreview extends WorkspaceFileEntry {
+  content: string;
+}
+
 export function runDir(runId: string): string {
   return join(getAgentboardRoot(), runId);
 }
@@ -82,6 +95,72 @@ export function implementationWorkspaceDir(runId: string): string {
     ? join(/*turbopackIgnore: true*/ process.cwd(), '.agentboard/workspaces')
     : join(dirname(runsRoot), 'workspaces');
   return join(workspacesRoot, runId);
+}
+
+function workspaceRelativePath(path: string): string {
+  return path.split(sep).join('/');
+}
+
+function resolveWorkspaceFile(runId: string, requestedPath: string): { root: string; path: string; relativePath: string } {
+  const root = resolve(implementationWorkspaceDir(runId));
+  const trimmed = requestedPath.trim();
+  if (!trimmed || trimmed.includes('\0') || isAbsolute(trimmed)) {
+    throw new Error('Invalid workspace path');
+  }
+  const resolvedPath = resolve(root, trimmed);
+  const relativePath = relative(root, resolvedPath);
+  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error('Invalid workspace path');
+  }
+  return { root, path: resolvedPath, relativePath: workspaceRelativePath(relativePath) };
+}
+
+export async function listImplementationWorkspaceFiles(runId: string): Promise<WorkspaceFileEntry[]> {
+  const root = implementationWorkspaceDir(runId);
+  const files: WorkspaceFileEntry[] = [];
+
+  async function walk(current: string): Promise<void> {
+    if (files.length >= MAX_WORKSPACE_FILES) return;
+    let entries: Awaited<ReturnType<typeof readdir>>;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (files.length >= MAX_WORKSPACE_FILES) return;
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const info = await stat(fullPath);
+      files.push({
+        path: workspaceRelativePath(relative(root, fullPath)),
+        size: info.size,
+        updatedAt: info.mtime.toISOString(),
+      });
+    }
+  }
+
+  await walk(root);
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export async function readImplementationWorkspaceFile(runId: string, requestedPath: string): Promise<WorkspaceFilePreview> {
+  const resolved = resolveWorkspaceFile(runId, requestedPath);
+  const info = await stat(resolved.path);
+  if (!info.isFile()) throw new Error('Workspace path is not a file');
+  if (info.size > MAX_WORKSPACE_FILE_PREVIEW_BYTES) throw new Error('Workspace file is too large to preview');
+  return {
+    path: resolved.relativePath,
+    size: info.size,
+    updatedAt: info.mtime.toISOString(),
+    content: await readFile(resolved.path, 'utf8'),
+  };
 }
 
 export function createAgentStates(roles: AgentRole[] = DEFAULT_AGENTS, mode: RunMode = 'mock'): AgentState[] {
@@ -445,6 +524,7 @@ export async function deleteRun(runId: string): Promise<void> {
     throw new Error('Run is in progress');
   }
   await rm(runDir(runId), { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+  await rm(implementationWorkspaceDir(runId), { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
   if (state.run.clientSessionId) {
     await removeClientSessionRun(state.run.clientSessionId, runId);
   }

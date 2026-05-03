@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   createRun,
   deleteRun,
+  implementationWorkspaceDir,
   readClientSession,
   readClientSessionSnapshot,
   readEvents,
@@ -109,6 +110,23 @@ test('deleteRun removes completed run state and session references', async () =>
   assert.equal(session.activeRunId, undefined);
   assert.deepEqual(session.recentRunIds, []);
   assert.deepEqual(snapshot.recentRuns, []);
+}));
+
+test('deleteRun removes completed run workspace artifacts', async () => withStateDir(async () => {
+  const state = await createRun({
+    title: 'delete workspace',
+    brief: 'workspace도 함께 삭제해야 한다',
+    mode: 'mock',
+    clientSessionId: 'client_delete_workspace_session',
+  });
+  const workspace = implementationWorkspaceDir(state.run.id);
+  await mkdir(workspace, { recursive: true });
+  await writeFile(join(workspace, 'result.md'), 'workspace artifact');
+  await updateRunStatus(state.run.id, 'completed');
+
+  await deleteRun(state.run.id);
+
+  await assert.rejects(() => access(workspace), { code: 'ENOENT' });
 }));
 
 test('deleteRun rejects active runs', async () => withStateDir(async () => {

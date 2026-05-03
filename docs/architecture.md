@@ -20,7 +20,8 @@ AgentBoard는 ChatGPT처럼 사용자가 메시지를 보내면 여러 AI 에이
       ├─ 4분할 Agent 채팅 패널로 상태/대화 관찰
       ├─ 사용자-facing 메시지 버블 관찰
       ├─ 각 Agent 패널에서 권한 요청 승인/거절
-      ├─ Logs drawer로 agent handoff와 raw event 관찰
+      ├─ Logs drawer 필터로 agent handoff, 권한 요청, 오류, tmux event 관찰
+      ├─ 산출물 패널에서 final report, messages timeline, workspace 파일 확인
       ├─ 좌측 session 목록에서 완료/중단 run 삭제
       ├─ 답변 생성 중 개입 입력과 취소 버튼
       └─ Logs 안의 실행 요약 확인
@@ -67,7 +68,7 @@ Local State Store
 주요 구성:
 
 - `ChatWorkspace`: 루트(`/`)의 ChatGPT형 shell. 좌측 세션 목록, 새 대화 버튼, 실행 모드 선택, 빈 챗봇 composer, 선택 run embedding을 제공한다.
-- `ChatRoom`: run header, 진행 indicator, 4분할 agent chat panel, 권한 승인 카드, agent handoff Logs drawer와 log detail modal, Logs 내부 실행 요약, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공한다. `/runs/:runId` 단독 페이지와 `ChatWorkspace` embedded 모드에서 함께 사용한다.
+- `ChatRoom`: run header, 병목 상태 badge, 4분할 agent chat panel, 권한 승인/거절 카드, 필터 가능한 Logs drawer, log detail modal, 산출물 패널, 사용자 요청 composer와 취소 컨트롤을 한 화면에서 제공한다. 권한 요청은 해당 Agent 메시지 feed의 시간순 항목으로 표시하고, 상단 `승인 요청` badge를 누르면 pending 요청이 있는 Agent 확대 화면으로 이동한다. `/runs/:runId` 단독 페이지와 `ChatWorkspace` embedded 모드에서 함께 사용한다.
 - `ChatRoom`의 selected agent/log/report/draft 같은 가벼운 UI 상태는 run별 localStorage key에 저장한다.
 
 브라우저 session state는 두 계층으로 나뉜다.
@@ -85,6 +86,7 @@ Chat UI와 Runner 사이의 HTTP 경계다.
 - Run 삭제
 - Session snapshot 조회 및 stale run 정리
 - Run 상태 조회
+- Final report와 workspace 산출물 조회
 - SSE event stream 제공
 - 사용자 요청 메시지 기록 및 새 답변 turn 시작
 - 진행 중 사용자 개입을 queue로 저장하고 Orchestrator 판단 checkpoint에 노출
@@ -175,7 +177,7 @@ OpenCode의 session runtime처럼 AgentBoard 내부가 대화 이력을 유지�
 지원 대상:
 
 - `MockAgentAdapter`: README 기본 데모. 외부 key 없이 deterministic하게 동작한다.
-- `TmuxSessionAdapter`: 권장 real Codex path. role별 persistent tmux session에 Codex를 유지하고, prompt마다 AgentBoard transport marker를 요구한다. 긴 prompt는 `.agentboard/runs/<runId>/tmux-prompts/` 임시 파일을 통해 `tmux load-buffer`로 주입한 뒤 삭제한다. `capture-pane` polling으로 `AGENTBOARD_DONE` marker를 감지하면 `session.completed` 이벤트를 남기고 marker를 제거한 output만 Runtime에 반환한다. DONE marker가 누락되어도 `AGENTBOARD_BEGIN` 이후 output이 있고 Codex가 idle prompt로 복귀한 뒤 같은 output이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지되어야 `completionSource=idle-prompt-fallback`으로 완료 처리한다. Codex 권한 프롬프트는 `approval.requested` event로 승격하고 Web UI 승인/거절을 `POST /api/runs/:runId/approvals`를 통해 다시 tmux pane에 주입한다.
+- `TmuxSessionAdapter`: 권장 real Codex path. role별 persistent tmux session에 Codex를 유지하고, prompt마다 AgentBoard transport marker를 요구한다. 긴 prompt는 기본적으로 `.agentboard/runs/<runId>/tmux-prompts/` 파일에 저장하고 tmux에는 파일 경로를 읽으라는 짧은 instruction만 주입한다(`promptTransport=tmux-file-reference`). `capture-pane` polling으로 `AGENTBOARD_DONE` marker를 감지하면 `session.completed` 이벤트를 남기고 marker를 제거한 output만 Runtime에 반환한다. DONE marker가 누락되어도 `AGENTBOARD_BEGIN` 이후 output이 있고 Codex가 idle prompt로 복귀한 뒤 같은 output이 `AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS` 동안 안정적으로 유지되어야 `completionSource=idle-prompt-fallback`으로 완료 처리한다. Codex 권한 프롬프트는 `approval.requested` event로 승격하고 Web UI 승인/거절을 `POST /api/runs/:runId/approvals`를 통해 다시 tmux pane에 주입한다. 안전한 반복 검증 명령은 `AGENTBOARD_AUTO_APPROVE_COMMANDS` allowlist로 자동 승인할 수 있으며, 이 경우에도 `approval.requested`와 `approval.approved(source=auto)` event를 남긴다. Codex 원본 선택지 텍스트는 raw log payload에만 남기고 기본 Agent feed에는 `승인`/`거절` 버튼만 노출한다.
 - `CliAgentAdapter`: short fallback. 로컬 `codex exec` 같은 one-shot command를 `shell: false`로 실행하고 stdout을 runtime에 반환한다. 긴 작업이나 권한 prompt가 필요한 시연에서는 primary path로 쓰지 않는다.
 
 CLI mode 기본 role 매핑:
@@ -276,6 +278,8 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 - `intervention.decision_made`
 - `session.created`
 - `session.prompt_injected`
+- `session.prompt_submitted`
+- `session.prompt_submit_failed`
 - `session.output_captured`
 - `session.completed`
 - `session.completion_timeout`
@@ -299,10 +303,13 @@ Browser -> POST /api/runs/<runId>/interventions -> user message 저장 -> Runner
 - `POST /api/sessions/:clientSessionId/active-run`
 - `GET /api/runs/:runId`
 - `GET /api/runs/:runId/events`
+- `GET /api/runs/:runId/artifact` — final report 조회
+- `GET /api/runs/:runId/workspace` — workspace 파일 목록 조회
+- `GET /api/runs/:runId/workspace/file?path=...` — workspace 파일 preview 조회
 - `POST /api/runs/:runId/interventions` — 새 사용자 요청 turn 시작
 - `POST /api/runs/:runId/control` — UI 취소는 `stop` 사용
 - `POST /api/runs/:runId/approvals` — tmux Codex 권한 요청 승인/거절
-- `DELETE /api/runs/:runId` — 진행 중이 아닌 run hard delete
+- `DELETE /api/runs/:runId` — 진행 중이 아닌 run과 workspace hard delete
 
 ## ASAP 구현 순서
 

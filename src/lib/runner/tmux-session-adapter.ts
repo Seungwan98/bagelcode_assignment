@@ -42,8 +42,13 @@ export interface TmuxCommandConfig {
   readyPollMs: number;
   pasteReadyTimeoutMs: number;
   submitDelayMs: number;
+  submitConfirmTimeoutMs: number;
+  submitRetryCount: number;
   idleFallbackStableMs: number;
   sessionPrefix: string;
+  promptTransport: TmuxPromptTransportMode;
+  promptTransportByRole: Partial<Record<AgentRole, TmuxPromptTransportMode>>;
+  autoApproveCommands: string[];
 }
 
 const DEFAULT_TMUX_TIMEOUT_MS = 10_000;
@@ -55,10 +60,23 @@ const DEFAULT_TMUX_READY_TIMEOUT_MS = 20_000;
 const DEFAULT_TMUX_READY_POLL_MS = 250;
 const DEFAULT_TMUX_PASTE_READY_TIMEOUT_MS = 2_000;
 const DEFAULT_TMUX_SUBMIT_DELAY_MS = 1_000;
+const DEFAULT_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS = 3_000;
+const DEFAULT_TMUX_SUBMIT_RETRY_COUNT = 4;
 const DEFAULT_TMUX_IDLE_FALLBACK_STABLE_MS = 30_000;
 const DEFAULT_TMUX_SESSION_PREFIX = 'agentboard';
+const DEFAULT_TMUX_PROMPT_TRANSPORT: TmuxPromptTransportMode = 'file-reference';
 
 type CompletionMarkerStatus = 'complete' | 'blocked';
+type TmuxPromptTransportMode = 'file-reference' | 'paste-buffer';
+type PromptTransportEventValue = 'tmux-file-reference' | 'tmux-load-buffer-file';
+type ApprovalSource = 'user' | 'auto';
+
+const TMUX_PROMPT_TRANSPORT_ENV_BY_ROLE: Record<AgentRole, string> = {
+  orchestrator: 'AGENTBOARD_ORCHESTRATOR_TMUX_PROMPT_TRANSPORT',
+  planner: 'AGENTBOARD_PLANNER_TMUX_PROMPT_TRANSPORT',
+  engineer: 'AGENTBOARD_ENGINEER_TMUX_PROMPT_TRANSPORT',
+  reviewer: 'AGENTBOARD_REVIEWER_TMUX_PROMPT_TRANSPORT',
+};
 
 interface CompletionProtocol {
   token: string;
@@ -69,7 +87,7 @@ interface CompletionResult {
   body: string;
   markerStatus: CompletionMarkerStatus;
   rawStdout: string;
-  completionSource: 'done-marker' | 'idle-prompt-fallback';
+  completionSource: 'done-marker' | 'idle-prompt-fallback' | 'idle-output-fallback';
 }
 
 type ApprovalAction = 'approve' | 'reject';
@@ -88,6 +106,20 @@ interface IdleFallbackCandidate {
   completion: CompletionResult;
 }
 
+interface SubmitConfirmationResult {
+  confirmed: boolean;
+  stdout: string;
+  reason: 'marker' | 'working' | 'approval' | 'output' | 'pasted-idle' | 'prompt-idle' | 'idle';
+}
+
+interface PromptInjectionResult {
+  promptPath: string;
+  promptBytes: number;
+  promptTransport: PromptTransportEventValue;
+  promptInstructionBytes?: number;
+  cleanupAfterRun: boolean;
+}
+
 function parsePositiveInteger(value: string | undefined, fallback: number, name: string): number {
   if (!value?.trim()) return fallback;
   const parsed = Number(value);
@@ -100,6 +132,49 @@ function parseAllowlist(value: string | undefined, fallback: string[]): string[]
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function parseAutoApproveCommands(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(/[,\n]/)
+    .map((entry) => compactTerminalLine(entry))
+    .filter(Boolean);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findAutoApproveCommandPattern(command: string, patterns: string[]): string | undefined {
+  const normalizedCommand = compactTerminalLine(command);
+  return patterns.find((pattern) => {
+    const normalizedPattern = compactTerminalLine(pattern);
+    if (!normalizedPattern) return false;
+    if (!normalizedPattern.includes('*')) return normalizedCommand === normalizedPattern;
+    const regex = new RegExp(`^${normalizedPattern.split('*').map(escapeRegExp).join('.*')}$`);
+    return regex.test(normalizedCommand);
+  });
+}
+
+function parsePromptTransport(value: string | undefined, name = 'AGENTBOARD_TMUX_PROMPT_TRANSPORT'): TmuxPromptTransportMode {
+  const normalized = value?.trim();
+  if (!normalized) return DEFAULT_TMUX_PROMPT_TRANSPORT;
+  if (normalized === 'file-reference' || normalized === 'paste-buffer') return normalized;
+  throw new Error(`${name} must be file-reference or paste-buffer`);
+}
+
+function parsePromptTransportOverride(value: string | undefined, name: string): TmuxPromptTransportMode | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  return parsePromptTransport(normalized, name);
+}
+
+function resolvePromptTransportByRole(env: NodeJS.ProcessEnv): Partial<Record<AgentRole, TmuxPromptTransportMode>> {
+  return Object.fromEntries(
+    Object.entries(TMUX_PROMPT_TRANSPORT_ENV_BY_ROLE)
+      .map(([role, name]) => [role, parsePromptTransportOverride(env[name], name)])
+      .filter((entry): entry is [AgentRole, TmuxPromptTransportMode] => Boolean(entry[1])),
+  );
 }
 
 function safeTmuxToken(value: string): string {
@@ -136,7 +211,11 @@ function tmuxPromptTempDir(runId: string): string {
 }
 
 function tmuxPromptTempPath(runId: string, role: AgentRole, buffer: string): string {
-  return join(tmuxPromptTempDir(runId), `${safeTmuxToken(role)}-${safeTmuxToken(buffer)}.txt`);
+  return join(tmuxPromptTempDir(runId), `${safeTmuxToken(role)}-${safeTmuxToken(buffer)}.md`);
+}
+
+function tmuxPromptInstructionTempPath(runId: string, role: AgentRole, buffer: string): string {
+  return join(tmuxPromptTempDir(runId), `${safeTmuxToken(role)}-${safeTmuxToken(buffer)}-instruction.txt`);
 }
 
 function markerParts(kind: 'BEGIN' | 'DONE', token: string, runId: string, role: AgentRole, status?: CompletionMarkerStatus): string {
@@ -171,6 +250,14 @@ function withCompletionProtocol(prompt: string, runId: string, role: AgentRole):
   };
 }
 
+function promptFileReferenceInstruction(runId: string, role: AgentRole, _token: string, promptPath: string): string {
+  return [
+    `AgentBoard prompt file (${role}/${runId}):`,
+    promptPath,
+    'Read it and execute it exactly. Do not summarize this handoff.',
+  ].join('\n');
+}
+
 function parseMarkerAttributes(raw: string): Record<string, string> {
   const attributes: Record<string, string> = {};
   for (const part of raw.trim().split(/\s+/)) {
@@ -186,6 +273,21 @@ function stripTransportMarkers(value: string): string {
     .replace(/^.*<<<AGENTBOARD_BEGIN\s+[^>]*>>>.*$/gm, '')
     .replace(/^.*<<<AGENTBOARD_DONE\s+[^>]*>>>.*$/gm, '')
     .trim();
+}
+
+function isIncompleteJsonFragment(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || !/^[{[]/.test(trimmed)) return false;
+  if (trimmed.startsWith('[')) {
+    const next = trimmed.slice(1).trimStart()[0] ?? '';
+    if (!/[[{"\]\d\-tfn]/.test(next)) return false;
+  }
+  try {
+    JSON.parse(trimmed);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 function extractCompletionResult(rawStdout: string, token: string): CompletionResult | undefined {
@@ -229,16 +331,117 @@ function extractIdlePromptCompletionResult(rawStdout: string, token: string): Co
   const idlePromptIndex = afterBegin.lastIndexOf('\n› ');
   if (idlePromptIndex < 0) return undefined;
   const afterIdlePrompt = afterBegin.slice(idlePromptIndex);
-  if (/Working\s*\(/.test(afterIdlePrompt)) return undefined;
+  if (/\bWorking\b/.test(afterIdlePrompt)) return undefined;
 
   const body = stripTransportMarkers(afterBegin.slice(0, idlePromptIndex));
   if (!body.trim()) return undefined;
+  if (isIncompleteJsonFragment(body)) return undefined;
   return {
     body,
     markerStatus: 'complete',
     rawStdout,
     completionSource: 'idle-prompt-fallback',
   };
+}
+
+function stripCodexStatusLines(value: string): string {
+  return value
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/^›\s*.*\[Pasted Content\b/.test(trimmed)) return false;
+      if (/^gpt-[\w.-]+\s+.*\bContext\b.*\bin\b.*\bout\b/i.test(trimmed)) return false;
+      if (/^Context\s+\d+%/i.test(trimmed)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
+function isPastedPromptInputLine(line: string): boolean {
+  return /^\s*›\s*.*\[Pasted Content\b/.test(line);
+}
+
+function hasGeneratedOutputAfterPastedPrompt(rawStdout: string): boolean {
+  const lines = normalizeTerminalText(rawStdout).split('\n');
+  const pastedPromptIndex = lines.findLastIndex(isPastedPromptInputLine);
+  if (pastedPromptIndex < 0) return false;
+  const body = stripCodexStatusLines(lines.slice(pastedPromptIndex + 1).join('\n'));
+  return Boolean(body.trim());
+}
+
+function hasExactTransportMarker(rawStdout: string, token: string): boolean {
+  const markerPattern = /<<<AGENTBOARD_(BEGIN|DONE)\s+([^>]*)>>>/g;
+  return [...rawStdout.matchAll(markerPattern)]
+    .some((match) => parseMarkerAttributes(match[2] ?? '').token === token);
+}
+
+function extractIdleOutputCompletionResult(rawStdout: string, token: string): CompletionResult | undefined {
+  if (rawStdout.includes(`AGENTBOARD_BEGIN token=${token}`) || rawStdout.includes(`AGENTBOARD_DONE token=${token}`)) return undefined;
+  const normalized = normalizeTerminalText(rawStdout);
+  if (/\bWorking\b/.test(normalized)) return undefined;
+
+  const lines = normalized.split('\n');
+  const pastedPromptIndex = lines.findLastIndex(isPastedPromptInputLine);
+  if (pastedPromptIndex < 0) return undefined;
+
+  const idlePromptIndex = lines.findLastIndex((line, index) => index > pastedPromptIndex && /^\s*›\s/.test(line));
+  if (idlePromptIndex < 0) return undefined;
+
+  const body = stripCodexStatusLines(lines.slice(pastedPromptIndex + 1, idlePromptIndex).join('\n'));
+  if (!body.trim()) return undefined;
+  if (isIncompleteJsonFragment(body)) return undefined;
+  return {
+    body,
+    markerStatus: 'complete',
+    rawStdout,
+    completionSource: 'idle-output-fallback',
+  };
+}
+
+function isPastedPromptStillIdle(rawStdout: string): boolean {
+  const tail = normalizeTerminalText(rawStdout).split('\n').slice(-80).join('\n');
+  return /\[Pasted Content\b/.test(tail)
+    && /(^|\n)\s*›\s*.*\[Pasted Content\b/.test(tail)
+    && !/\bWorking\b/.test(tail)
+    && !/<<<AGENTBOARD_(BEGIN|DONE)\s+/.test(tail);
+}
+
+function isPromptInstructionStillIdle(rawStdout: string, token: string): boolean {
+  const tail = normalizeTerminalText(rawStdout).split('\n').slice(-120).join('\n');
+  return (
+    tail.includes('AgentBoard prompt file')
+    || tail.includes('Read this prompt file and execute every instruction in it')
+  )
+    && /(^|\n)\s*›\s*(AgentBoard prompt file|AgentBoard turn)\b/.test(tail)
+    && !/\bWorking\b/.test(tail)
+    && !hasExactTransportMarker(tail, token);
+}
+
+function submitConfirmationFromOutput(rawStdout: string, token: string): SubmitConfirmationResult {
+  if (extractCompletionResult(rawStdout, token)
+    || extractIdlePromptCompletionResult(rawStdout, token)
+    || extractIdleOutputCompletionResult(rawStdout, token)
+    || hasExactTransportMarker(rawStdout, token)) {
+    return { confirmed: true, stdout: rawStdout, reason: 'marker' };
+  }
+  if (isPastedPromptStillIdle(rawStdout)) {
+    return { confirmed: false, stdout: rawStdout, reason: 'pasted-idle' };
+  }
+  if (isPromptInstructionStillIdle(rawStdout, token)) {
+    return { confirmed: false, stdout: rawStdout, reason: 'prompt-idle' };
+  }
+  if (/\bWorking\b/.test(rawStdout)) {
+    return { confirmed: true, stdout: rawStdout, reason: 'working' };
+  }
+  if (extractApprovalRequest(rawStdout)) {
+    return { confirmed: true, stdout: rawStdout, reason: 'approval' };
+  }
+  if (hasGeneratedOutputAfterPastedPrompt(rawStdout)) {
+    return { confirmed: true, stdout: rawStdout, reason: 'output' };
+  }
+  return { confirmed: false, stdout: rawStdout, reason: 'idle' };
 }
 
 function normalizeTerminalText(value: string): string {
@@ -305,8 +508,13 @@ export function resolveTmuxCommandConfig(env: NodeJS.ProcessEnv = process.env): 
     readyPollMs: parsePositiveInteger(env.AGENTBOARD_TMUX_READY_POLL_MS, DEFAULT_TMUX_READY_POLL_MS, 'AGENTBOARD_TMUX_READY_POLL_MS'),
     pasteReadyTimeoutMs: parsePositiveInteger(env.AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS, DEFAULT_TMUX_PASTE_READY_TIMEOUT_MS, 'AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS'),
     submitDelayMs: parsePositiveInteger(env.AGENTBOARD_TMUX_SUBMIT_DELAY_MS, DEFAULT_TMUX_SUBMIT_DELAY_MS, 'AGENTBOARD_TMUX_SUBMIT_DELAY_MS'),
+    submitConfirmTimeoutMs: parsePositiveInteger(env.AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS, DEFAULT_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS, 'AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS'),
+    submitRetryCount: parsePositiveInteger(env.AGENTBOARD_TMUX_SUBMIT_RETRY_COUNT, DEFAULT_TMUX_SUBMIT_RETRY_COUNT, 'AGENTBOARD_TMUX_SUBMIT_RETRY_COUNT'),
     idleFallbackStableMs: parsePositiveInteger(env.AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS, DEFAULT_TMUX_IDLE_FALLBACK_STABLE_MS, 'AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS'),
     sessionPrefix: env.AGENTBOARD_TMUX_SESSION_PREFIX?.trim() || DEFAULT_TMUX_SESSION_PREFIX,
+    promptTransport: parsePromptTransport(env.AGENTBOARD_TMUX_PROMPT_TRANSPORT),
+    promptTransportByRole: resolvePromptTransportByRole(env),
+    autoApproveCommands: parseAutoApproveCommands(env.AGENTBOARD_AUTO_APPROVE_COMMANDS),
   };
 }
 
@@ -325,14 +533,19 @@ export class TmuxSessionAdapter {
     const startedAt = Date.now();
     const handle = await this.ensureSession(input.runId, input.role);
     const protocol = withCompletionProtocol(input.prompt, input.runId, input.role);
-    await this.injectPrompt(input.runId, input.role, protocol.prompt, handle);
-    const completion = await this.waitForCompletion(input, handle, protocol.token, startedAt);
-    return {
-      stdout: completion.body.trim(),
-      stderr: '',
-      exitCode: 0,
-      durationMs: Date.now() - startedAt,
-    };
+    let injection: PromptInjectionResult | undefined;
+    try {
+      injection = await this.injectPrompt(input.runId, input.role, protocol.prompt, handle, protocol.token);
+      const completion = await this.waitForCompletion(input, handle, protocol.token, startedAt);
+      return {
+        stdout: completion.body.trim(),
+        stderr: '',
+        exitCode: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    } finally {
+      if (injection) await this.cleanupPromptInjection(input.runId, input.role, injection);
+    }
   }
 
   async ensureSession(runId: string, role: AgentRole): Promise<AgentSessionHandle> {
@@ -384,39 +597,75 @@ export class TmuxSessionAdapter {
     return saved;
   }
 
-  async injectPrompt(runId: string, role: AgentRole, prompt: string, handle?: AgentSessionHandle): Promise<void> {
+  async injectPrompt(runId: string, role: AgentRole, prompt: string, handle?: AgentSessionHandle, completionToken?: string): Promise<PromptInjectionResult> {
     const session = handle ?? await this.ensureSession(runId, role);
     const injectedAt = nowIso();
     await updateAgentSessionStatus(runId, role, 'running', { lastInjectedAt: injectedAt });
     const buffer = tmuxBufferName(runId, role);
     const promptPath = tmuxPromptTempPath(runId, role, buffer);
+    const instructionPath = tmuxPromptInstructionTempPath(runId, role, buffer);
+    const promptBytes = Buffer.byteLength(prompt, 'utf8');
+    const rolePromptTransport = this.tmuxConfig.promptTransportByRole[role] ?? this.tmuxConfig.promptTransport;
+    const useFileReference = rolePromptTransport === 'file-reference' && Boolean(completionToken);
+    const promptTransport: PromptTransportEventValue = useFileReference ? 'tmux-file-reference' : 'tmux-load-buffer-file';
+    const promptInstruction = useFileReference
+      ? promptFileReferenceInstruction(runId, role, completionToken as string, promptPath)
+      : prompt;
+    const promptInstructionBytes = Buffer.byteLength(promptInstruction, 'utf8');
+    const bufferPath = useFileReference ? instructionPath : promptPath;
+    const injection: PromptInjectionResult = {
+      promptPath,
+      promptBytes,
+      promptTransport,
+      promptInstructionBytes: useFileReference ? promptInstructionBytes : undefined,
+      cleanupAfterRun: useFileReference,
+    };
+
     await mkdir(tmuxPromptTempDir(runId), { recursive: true });
     await writeFile(promptPath, prompt, 'utf8');
+    if (useFileReference) await writeFile(instructionPath, promptInstruction, 'utf8');
     try {
-      await this.runTmux(['load-buffer', '-b', buffer, promptPath]);
+      await this.runTmux(['load-buffer', '-b', buffer, bufferPath]);
       await this.runTmux(['paste-buffer', '-b', buffer, '-t', session.tmuxPane || session.tmuxSession]);
-      await this.waitForPromptPasteReady(session, prompt);
-      if (this.tmuxConfig.submitDelayMs > 0) await sleep(this.tmuxConfig.submitDelayMs);
-      await this.runTmux(['send-keys', '-t', session.tmuxPane || session.tmuxSession, 'Enter']);
+      await this.waitForPromptPasteReady(session, promptInstruction);
+    } catch (error) {
+      await this.cleanupPromptInjection(runId, role, injection);
+      throw error;
     } finally {
       await this.runTmux(['delete-buffer', '-b', buffer]).catch(() => undefined);
-      await rm(promptPath, { force: true }).catch(() => undefined);
+      await rm(instructionPath, { force: true }).catch(() => undefined);
+      if (!useFileReference) await rm(promptPath, { force: true }).catch(() => undefined);
     }
-    await appendEvent(runId, {
-      id: createId('evt'),
-      runId,
-      type: 'session.prompt_injected',
-      actor: role,
-      payload: {
-        role,
-        adapter: this.kind,
-        tmuxSession: session.tmuxSession,
-        tmuxPane: session.tmuxPane,
-        promptBytes: Buffer.byteLength(prompt, 'utf8'),
-        promptTransport: 'tmux-load-buffer-file',
-      },
-      createdAt: injectedAt,
-    });
+
+    try {
+      await appendEvent(runId, {
+        id: createId('evt'),
+        runId,
+        type: 'session.prompt_injected',
+        actor: role,
+        payload: {
+          role,
+          adapter: this.kind,
+          tmuxSession: session.tmuxSession,
+          tmuxPane: session.tmuxPane,
+          promptBytes,
+          promptInstructionBytes,
+          promptTransport,
+          promptFilePath: useFileReference ? promptPath : undefined,
+        },
+        createdAt: injectedAt,
+      });
+      if (this.tmuxConfig.submitDelayMs > 0) await sleep(this.tmuxConfig.submitDelayMs);
+      if (completionToken) {
+        await this.submitPromptAndConfirm(runId, role, session, completionToken);
+      } else {
+        await this.runTmux(['send-keys', '-t', session.tmuxPane || session.tmuxSession, 'Enter']);
+      }
+      return injection;
+    } catch (error) {
+      await this.cleanupPromptInjection(runId, role, injection);
+      throw error;
+    }
   }
 
   async captureOutput(runId: string, role: AgentRole, handle?: AgentSessionHandle): Promise<string> {
@@ -451,14 +700,20 @@ export class TmuxSessionAdapter {
     }
   }
 
-  async respondToApproval(runId: string, role: AgentRole, action: ApprovalAction, approvalId: string): Promise<void> {
+  async respondToApproval(
+    runId: string,
+    role: AgentRole,
+    action: ApprovalAction,
+    approvalId: string,
+    options: { source?: ApprovalSource; matchedCommandPattern?: string } = {},
+  ): Promise<void> {
     const state = await readState(runId);
     const handle = state.sessions?.[role];
     if (!handle || handle.transport !== 'tmux') throw new Error(`No tmux session found for ${role}`);
     const key = action === 'approve' ? 'Enter' : 'Escape';
-    await this.runTmux(['send-keys', '-t', handle.tmuxPane || handle.tmuxSession, key]);
     await updateAgentSessionStatus(runId, role, 'running').catch(() => undefined);
     await updateAgentStatus(runId, role, 'thinking').catch(() => undefined);
+    await this.runTmux(['send-keys', '-t', handle.tmuxPane || handle.tmuxSession, key]);
     await appendEvent(runId, {
       id: createId('evt'),
       runId,
@@ -472,6 +727,8 @@ export class TmuxSessionAdapter {
         tmuxPane: handle.tmuxPane,
         action,
         injectedKey: key,
+        source: options.source ?? 'user',
+        matchedCommandPattern: options.matchedCommandPattern,
       },
       createdAt: nowIso(),
     });
@@ -513,9 +770,116 @@ export class TmuxSessionAdapter {
     while (Date.now() <= deadline) {
       const stdout = await this.capturePane(session).catch(() => '');
       const tail = stdout.split('\n').slice(-30).join('\n');
-      if (tail.includes('[Pasted Content') || Boolean(token && tail.includes(token))) return;
+      if (
+        tail.includes('[Pasted Content')
+        || tail.includes('AgentBoard prompt file')
+        || Boolean(token && tail.includes(token))
+      ) return;
       await sleep(pollMs);
     }
+  }
+
+  private async cleanupPromptInjection(runId: string, role: AgentRole, injection: PromptInjectionResult): Promise<void> {
+    if (!injection.cleanupAfterRun) return;
+    try {
+      await rm(injection.promptPath, { force: true });
+    } catch (error) {
+      await appendEvent(runId, {
+        id: createId('evt'),
+        runId,
+        type: 'error',
+        actor: role,
+        payload: {
+          message: 'tmux prompt file cleanup failed',
+          role,
+          adapter: this.kind,
+          promptFilePath: injection.promptPath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        createdAt: nowIso(),
+      }).catch(() => undefined);
+    }
+  }
+
+  private async submitPromptAndConfirm(
+    runId: string,
+    role: AgentRole,
+    session: AgentSessionHandle,
+    token: string,
+  ): Promise<void> {
+    const maxAttempts = Math.max(1, this.tmuxConfig.submitRetryCount + 1);
+    let latest: SubmitConfirmationResult = { confirmed: false, stdout: '', reason: 'idle' };
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const key = attempt === 1 ? 'Enter' : 'C-m';
+      await this.runTmux(['send-keys', '-t', session.tmuxPane || session.tmuxSession, key]);
+      latest = await this.waitForPromptSubmitConfirmation(session, token);
+      if (latest.confirmed) {
+        const submittedAt = nowIso();
+        await updateAgentSessionStatus(runId, role, 'running', { lastCapturedAt: submittedAt }).catch(() => undefined);
+        await appendEvent(runId, {
+          id: createId('evt'),
+          runId,
+          type: 'session.prompt_submitted',
+          actor: role,
+          payload: {
+            role,
+            adapter: this.kind,
+            tmuxSession: session.tmuxSession,
+            tmuxPane: session.tmuxPane,
+            completionToken: token,
+            attempts: attempt,
+            submitKey: key,
+            confirmReason: latest.reason,
+            stdoutBytes: Buffer.byteLength(latest.stdout, 'utf8'),
+          },
+          createdAt: submittedAt,
+        });
+        return;
+      }
+    }
+
+    const failedAt = nowIso();
+    await updateAgentSessionStatus(runId, role, 'blocked', { lastCapturedAt: failedAt }).catch(() => undefined);
+    await updateAgentStatus(runId, role, 'blocked').catch(() => undefined);
+    await appendEvent(runId, {
+      id: createId('evt'),
+      runId,
+      type: 'session.prompt_submit_failed',
+      actor: role,
+      payload: {
+        role,
+        adapter: this.kind,
+        tmuxSession: session.tmuxSession,
+        tmuxPane: session.tmuxPane,
+        completionToken: token,
+        attempts: maxAttempts,
+        reason: latest.reason,
+        confirmTimeoutMs: this.tmuxConfig.submitConfirmTimeoutMs,
+        stdoutBytes: Buffer.byteLength(latest.stdout, 'utf8'),
+      },
+      createdAt: failedAt,
+    });
+    throw new Error(`tmux prompt submit failed for ${role}: Codex did not start processing prompt input`);
+  }
+
+  private async waitForPromptSubmitConfirmation(session: AgentSessionHandle, token: string): Promise<SubmitConfirmationResult> {
+    const timeoutMs = this.tmuxConfig.submitConfirmTimeoutMs;
+    if (timeoutMs <= 0) {
+      const stdout = await this.capturePane(session).catch(() => '');
+      return { confirmed: true, stdout, reason: 'output' };
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    const pollMs = Math.max(50, Math.min(this.tmuxConfig.completionPollMs, 500));
+    let latest: SubmitConfirmationResult = { confirmed: false, stdout: '', reason: 'idle' };
+    while (Date.now() <= deadline) {
+      const stdout = await this.capturePane(session).catch(() => '');
+      latest = submitConfirmationFromOutput(stdout, token);
+      if (latest.confirmed) return latest;
+      await sleep(pollMs);
+    }
+    return latest;
   }
 
   private async capturePane(session: AgentSessionHandle): Promise<string> {
@@ -547,7 +911,9 @@ export class TmuxSessionAdapter {
       if (input.signal?.aborted) throw new Error('tmux adapter aborted before completion marker was observed');
       latestStdout = await this.capturePane(handle);
       const markerCompletion = extractCompletionResult(latestStdout, token);
-      const idleCompletion = markerCompletion ? undefined : extractIdlePromptCompletionResult(latestStdout, token);
+      const idleCompletion = markerCompletion
+        ? undefined
+        : extractIdlePromptCompletionResult(latestStdout, token) ?? extractIdleOutputCompletionResult(latestStdout, token);
       let completion = markerCompletion;
       if (!completion && idleCompletion) {
         const now = Date.now();
@@ -615,6 +981,7 @@ export class TmuxSessionAdapter {
         reportedApprovals.add(approval.key);
         const approvalId = createId('approval');
         const requestedAt = nowIso();
+        const autoApprovePattern = findAutoApproveCommandPattern(approval.command, this.tmuxConfig.autoApproveCommands);
         await updateAgentSessionStatus(input.runId, input.role, 'blocked', { lastCapturedAt: requestedAt }).catch(() => undefined);
         await updateAgentStatus(input.runId, input.role, 'waiting').catch(() => undefined);
         await appendEvent(input.runId, {
@@ -633,9 +1000,17 @@ export class TmuxSessionAdapter {
             choices: approval.choices,
             prompt: approval.prompt,
             detectedAt: requestedAt,
+            autoApprove: Boolean(autoApprovePattern),
+            matchedCommandPattern: autoApprovePattern,
           },
           createdAt: requestedAt,
         });
+        if (autoApprovePattern) {
+          await this.respondToApproval(input.runId, input.role, 'approve', approvalId, {
+            source: 'auto',
+            matchedCommandPattern: autoApprovePattern,
+          });
+        }
       }
       await sleep(pollMs);
     }

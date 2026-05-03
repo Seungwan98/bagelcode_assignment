@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { POST as createRun } from '../src/app/api/runs/route';
 import { DELETE as deleteRunRoute } from '../src/app/api/runs/[runId]/route';
+import { GET as getWorkspace } from '../src/app/api/runs/[runId]/workspace/route';
+import { GET as getWorkspaceFile } from '../src/app/api/runs/[runId]/workspace/file/route';
 import { GET as getSession } from '../src/app/api/sessions/[clientSessionId]/route';
 import { POST as activateRun } from '../src/app/api/sessions/[clientSessionId]/active-run/route';
-import { updateRunStatus } from '../src/lib/store/file-store';
+import { implementationWorkspaceDir, updateRunStatus } from '../src/lib/store/file-store';
 
 async function withStateDir<T>(fn: () => Promise<T>): Promise<T> {
   const previousDir = process.env.AGENTBOARD_STATE_DIR;
@@ -157,4 +159,48 @@ test('run delete API rejects running runs', async () => withStateDir(async () =>
 
   assert.equal(deleteResponse.status, 409);
   assert.equal(body.error?.code, 'RUN_IN_PROGRESS');
+}));
+
+test('workspace APIs list and read run workspace files safely', async () => withStateDir(async () => {
+  const createResponse = await createRun(new Request('http://agentboard.test/api/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Workspace API run',
+      brief: 'workspace 파일을 보여줘',
+      mode: 'mock',
+    }),
+  }));
+  const created = await createResponse.json() as { ok: boolean; runId: string };
+  const workspace = implementationWorkspaceDir(created.runId);
+  await mkdir(join(workspace, 'src'), { recursive: true });
+  await writeFile(join(workspace, 'src', 'result.txt'), 'workspace result');
+
+  const listResponse = await getWorkspace(new Request(`http://agentboard.test/api/runs/${created.runId}/workspace`), {
+    params: Promise.resolve({ runId: created.runId }),
+  });
+  const list = await listResponse.json() as { ok: boolean; files: Array<{ path: string; size: number }> };
+
+  assert.equal(listResponse.status, 200);
+  assert.equal(list.ok, true);
+  assert.deepEqual(list.files.map((file) => file.path), ['src/result.txt']);
+  assert.equal(list.files[0]?.size, 'workspace result'.length);
+
+  const fileResponse = await getWorkspaceFile(new Request(`http://agentboard.test/api/runs/${created.runId}/workspace/file?path=${encodeURIComponent('src/result.txt')}`), {
+    params: Promise.resolve({ runId: created.runId }),
+  });
+  const file = await fileResponse.json() as { ok: boolean; file: { path: string; content: string } };
+
+  assert.equal(fileResponse.status, 200);
+  assert.equal(file.file.path, 'src/result.txt');
+  assert.equal(file.file.content, 'workspace result');
+
+  const unsafeResponse = await getWorkspaceFile(new Request(`http://agentboard.test/api/runs/${created.runId}/workspace/file?path=../state.json`), {
+    params: Promise.resolve({ runId: created.runId }),
+  });
+  const unsafe = await unsafeResponse.json() as { error?: { code?: string } };
+
+  assert.equal(unsafeResponse.status, 400);
+  assert.equal(unsafe.error?.code, 'INVALID_PATH');
+  await rm(workspace, { recursive: true, force: true });
 }));

@@ -138,14 +138,60 @@ export function orchestratorPlanFromRoles(
   };
 }
 
-function extractJsonObject(raw: string): string {
+function jsonSources(raw: string): string[] {
   const trimmed = raw.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() ?? trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('orchestrator output does not contain a JSON object');
-  return candidate.slice(start, end + 1);
+  const fenced = [...trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)]
+    .map((match) => match[1]?.trim())
+    .filter((value): value is string => Boolean(value));
+  return [...fenced, trimmed];
+}
+
+function extractJsonObjectCandidates(raw: string): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  for (const source of jsonSources(raw)) {
+    for (let start = source.indexOf('{'); start >= 0; start = source.indexOf('{', start + 1)) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+
+      for (let index = start; index < source.length; index += 1) {
+        const char = source[index];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            inString = false;
+          }
+          continue;
+        }
+
+        if (char === '"') {
+          inString = true;
+          continue;
+        }
+
+        if (char === '{') depth += 1;
+        if (char === '}') depth -= 1;
+
+        if (depth === 0) {
+          const candidate = source.slice(start, index + 1);
+          if (!seen.has(candidate)) {
+            seen.add(candidate);
+            candidates.push(candidate);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (!candidates.length) throw new Error('orchestrator output does not contain a JSON object');
+  return candidates;
 }
 
 function repairHardWrappedJsonStringLiterals(raw: string): string {
@@ -192,8 +238,7 @@ function repairHardWrappedJsonStringLiterals(raw: string): string {
   return repaired;
 }
 
-function parseJsonObject<T>(raw: string): T {
-  const json = extractJsonObject(raw);
+function parseJsonCandidate<T>(json: string): T {
   try {
     return JSON.parse(json) as T;
   } catch (error) {
@@ -203,6 +248,25 @@ function parseJsonObject<T>(raw: string): T {
       throw error;
     }
   }
+}
+
+function parseJsonObjects<T>(raw: string): T[] {
+  const candidates = extractJsonObjectCandidates(raw);
+  const parsed: T[] = [];
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      parsed.push(parseJsonCandidate<T>(candidate));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!parsed.length) throw lastError instanceof Error ? lastError : new Error('orchestrator output does not contain a parseable JSON object');
+  return parsed;
+}
+
+function parseJsonObject<T>(raw: string): T {
+  return parseJsonObjects<T>(raw)[0];
 }
 
 function normalizeText(value: unknown, fallback: string): string {
@@ -351,13 +415,14 @@ function normalizeSteps(rawSteps: unknown, state: RunState): OrchestratorStep[] 
 export function parseOrchestratorPlan(raw: string, state: RunState, userRequest = state.run.brief): OrchestratorPlan {
   const inferredDeliverableType = inferDeliverableType(userRequest);
   try {
-    const parsed = parseJsonObject<{
+    const parsedObjects = parseJsonObjects<{
       strategy?: unknown;
       reason?: unknown;
       deliverableType?: unknown;
       steps?: unknown;
       finalResponder?: unknown;
     }>(raw);
+    const parsed = parsedObjects.find((candidate) => Array.isArray(candidate.steps)) ?? parsedObjects[0];
     const enabled = new Set(enabledWorkerRoles(state));
     const steps = normalizeSteps(parsed.steps, state);
     const deliverableType = normalizeDeliverableType(parsed.deliverableType, inferredDeliverableType);
@@ -404,12 +469,15 @@ export function parseOrchestratorVerdict(
   } = {},
 ): OrchestratorVerdict {
   try {
-    const parsed = parseJsonObject<{
+    const parsedObjects = parseJsonObjects<{
       status?: unknown;
       reason?: unknown;
       userAnswer?: unknown;
       nextSteps?: unknown;
     }>(raw);
+    const parsed = [...parsedObjects].reverse().find((candidate) => (
+      candidate.status === 'complete' || candidate.status === 'incomplete'
+    )) ?? parsedObjects[0];
     const status = parsed.status === 'incomplete' ? 'incomplete' : parsed.status === 'complete' ? 'complete' : undefined;
     const deliverableType = options.deliverableType ?? 'answer';
     const implementationEvidence = options.implementationEvidence
@@ -514,12 +582,15 @@ export function parseOrchestratorInterventionDecision(
 ): OrchestratorInterventionDecision {
   const fallbackInstruction = pendingInterventions.map((message) => message.body).join('\n');
   try {
-    const parsed = parseJsonObject<{
+    const parsedObjects = parseJsonObjects<{
       action?: unknown;
       reason?: unknown;
       instruction?: unknown;
       question?: unknown;
     }>(raw);
+    const parsed = [...parsedObjects].reverse().find((candidate) => (
+      candidate.action === 'restart' || candidate.action === 'ask_user' || candidate.action === 'continue'
+    )) ?? parsedObjects[0];
     const action = parsed.action === 'restart' || parsed.action === 'ask_user' || parsed.action === 'continue'
       ? parsed.action
       : undefined;

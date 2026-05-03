@@ -47,7 +47,7 @@ export interface AgentConversationResult {
 }
 
 const MAX_CONTEXT_MESSAGES = 12;
-const DEFAULT_MAX_VERIFICATION_ITERATIONS = 3;
+const DEFAULT_MAX_VERIFICATION_ITERATIONS = 5;
 const MAX_IMPLEMENTATION_WORKSPACE_FILES = 80;
 
 type InterventionDecisionOutcome = 'continue' | 'continue_with_intervention' | 'restart' | 'paused';

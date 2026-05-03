@@ -77,7 +77,9 @@ if (command === 'paste-buffer') {
   const buffer = argAfter(args, '-b');
   const target = argAfter(args, '-t');
   const prompt = state.buffers[buffer] || '';
-  const token = prompt.match(/token=([A-Za-z0-9_-]+)/)?.[1] || 'missing-token';
+  const promptFile = prompt.match(/AgentBoard prompt file[^\\n]*\\n([^\\n]+)\\n/)?.[1]?.trim();
+  const effectivePrompt = promptFile && existsSync(promptFile) ? readFileSync(promptFile, 'utf8') : prompt;
+  const token = effectivePrompt.match(/token=([A-Za-z0-9_-]+)/)?.[1] || 'missing-token';
   state.panes = state.panes || {};
   state.panes[target] = { ...(state.panes[target] || {}), lastPrompt: prompt, lastToken: token, promptSubmitted: false };
   writeState(state);
@@ -89,7 +91,18 @@ if (command === 'send-keys') {
   const key = args.at(-1);
   const pane = state.panes?.[target];
   if (pane) {
-    if (pane.promptSubmitted === false && key === 'Enter') {
+    const stuckPaste = process.env.FAKE_TMUX_STUCK_PASTE_ROLE === pane.role;
+    const ignoreFirstSubmit = process.env.FAKE_TMUX_IGNORE_FIRST_SUBMIT_ROLE === pane.role;
+    const isSubmitKey = key === 'Enter' || key === 'C-m';
+    if (pane.promptSubmitted === false && isSubmitKey && !stuckPaste) {
+      const submitKeyCount = pane.submitKeyCount || 0;
+      pane.submitKeyCount = submitKeyCount + 1;
+      if (!ignoreFirstSubmit || submitKeyCount > 0) {
+        pane.promptSubmitted = true;
+      }
+    } else if (pane.promptSubmitted === false && isSubmitKey && stuckPaste) {
+      pane.submitKeyCount = (pane.submitKeyCount || 0) + 1;
+    } else if (pane.promptSubmitted === false && key === 'Enter') {
       pane.promptSubmitted = true;
     } else if (pane.permissionPending) {
       pane.approvalDecision = key;
@@ -110,8 +123,39 @@ if (command === 'capture-pane') {
   const pane = state.panes?.[target] || {};
   const role = pane.role || state.sessions[target]?.role || 'unknown';
   const token = pane.lastToken || 'missing-token';
+  if (pane.lastPrompt && pane.promptSubmitted === false) {
+    const visiblePrompt = process.env.FAKE_TMUX_VISIBLE_PROMPT_ROLE === role;
+    if (visiblePrompt) {
+      writeState(state);
+      console.log([
+        '╭─────────────────────────────────────────────────────╮',
+        '│ >_ OpenAI Codex (v0.128.0)                          │',
+        '╰─────────────────────────────────────────────────────╯',
+        '',
+        '› ' + String(pane.lastPrompt).replace(/\\n/g, '\\n  '),
+        '',
+        '  gpt-5.5 medium fast · main · Context 100% left · 0 in · 0 out',
+      ].join('\\n'));
+      process.exit(0);
+    }
+    const pastedPromptLine = process.env.FAKE_TMUX_PREFIXED_PASTE_ROLE === role
+      ? '› 너는[Pasted Content 1306 chars][Pasted Content 2406 chars]'
+      : '› [Pasted Content 1316 chars][Pasted Content 4059 chars]';
+    writeState(state);
+    console.log([
+      '╭─────────────────────────────────────────────────────╮',
+      '│ >_ OpenAI Codex (v0.128.0)                          │',
+      '╰─────────────────────────────────────────────────────╯',
+      '',
+      pastedPromptLine,
+      '',
+      '  gpt-5.5 medium fast · main · Context 100% left · 0 in · 0 out',
+    ].join('\\n'));
+    process.exit(0);
+  }
   const status = process.env.FAKE_TMUX_BLOCKED_ROLE === role ? 'blocked' : 'complete';
   const omitMarker = process.env.FAKE_TMUX_NO_MARKER_ROLE === role;
+  const omitMarkerWithIdleOutput = process.env.FAKE_TMUX_IDLE_OUTPUT_NO_MARKER_ROLE === role;
   const omitDone = process.env.FAKE_TMUX_OMIT_DONE_ROLE === role;
   const needsPermission = process.env.FAKE_TMUX_PERMISSION_ROLE === role;
   const delayDone = process.env.FAKE_TMUX_DELAY_DONE_ROLE === role;
@@ -145,8 +189,27 @@ if (command === 'capture-pane') {
       process.exit(0);
     }
   }
+  if (omitMarker) {
+    const captureCount = pane.noMarkerCaptureCount || 0;
+    state.panes[target] = { ...pane, noMarkerCaptureCount: captureCount + 1 };
+    writeState(state);
+    if (captureCount < 1) {
+      console.log('• Working (1s • esc to interrupt)');
+      process.exit(0);
+    }
+  }
   writeState(state);
   function output(body) {
+    if (omitMarkerWithIdleOutput) {
+      console.log([
+        '› [Pasted Content 900 chars]',
+        '',
+        body,
+        '',
+        '› Use /skills to list available skills',
+      ].join('\\n'));
+      return;
+    }
     if (omitMarker) {
       console.log(body);
       return;
@@ -202,13 +265,26 @@ async function withTmuxEnv<T>(fn: (statePath: string) => Promise<T>): Promise<T>
   process.env.AGENTBOARD_TMUX_READY_TIMEOUT_MS = '0';
   process.env.AGENTBOARD_TMUX_PASTE_READY_TIMEOUT_MS = '0';
   process.env.AGENTBOARD_TMUX_SUBMIT_DELAY_MS = '0';
+  process.env.AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS = '200';
+  process.env.AGENTBOARD_TMUX_SUBMIT_RETRY_COUNT = '1';
   process.env.AGENTBOARD_TMUX_IDLE_FALLBACK_STABLE_MS = '20';
   process.env.AGENTBOARD_TMUX_SESSION_PREFIX = 'testagentboard';
+  delete process.env.AGENTBOARD_TMUX_PROMPT_TRANSPORT;
+  delete process.env.AGENTBOARD_ORCHESTRATOR_TMUX_PROMPT_TRANSPORT;
+  delete process.env.AGENTBOARD_PLANNER_TMUX_PROMPT_TRANSPORT;
+  delete process.env.AGENTBOARD_ENGINEER_TMUX_PROMPT_TRANSPORT;
+  delete process.env.AGENTBOARD_REVIEWER_TMUX_PROMPT_TRANSPORT;
+  delete process.env.AGENTBOARD_AUTO_APPROVE_COMMANDS;
   delete process.env.FAKE_TMUX_NO_MARKER_ROLE;
   delete process.env.FAKE_TMUX_BLOCKED_ROLE;
   delete process.env.FAKE_TMUX_OMIT_DONE_ROLE;
   delete process.env.FAKE_TMUX_PERMISSION_ROLE;
   delete process.env.FAKE_TMUX_DELAY_DONE_ROLE;
+  delete process.env.FAKE_TMUX_STUCK_PASTE_ROLE;
+  delete process.env.FAKE_TMUX_PREFIXED_PASTE_ROLE;
+  delete process.env.FAKE_TMUX_VISIBLE_PROMPT_ROLE;
+  delete process.env.FAKE_TMUX_IGNORE_FIRST_SUBMIT_ROLE;
+  delete process.env.FAKE_TMUX_IDLE_OUTPUT_NO_MARKER_ROLE;
   process.env.FAKE_TMUX_STATE = fakeTmuxState;
   process.env.AGENTBOARD_CODEX_CMD = `${process.execPath} ${fakeCli}`;
   process.env.AGENTBOARD_CLI_ALLOWLIST = basename(process.execPath);
@@ -228,7 +304,7 @@ async function withTmuxEnv<T>(fn: (statePath: string) => Promise<T>): Promise<T>
 }
 
 async function waitForCompletedRun(runId: string): Promise<void> {
-  const deadline = Date.now() + 12_000;
+  const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
     const state = await readState(runId);
     if (state.run.status === 'completed' || state.run.status === 'failed') {
@@ -277,8 +353,8 @@ test('TmuxSessionAdapter creates and reuses a persistent role session', async ()
   assert.equal(events.filter((event) => event.type === 'session.completed' && event.actor === 'planner').length, 2);
 }));
 
-test('TmuxSessionAdapter injects long prompts through load-buffer file and cleans it up', async () => withTmuxEnv(async (fakeTmuxState) => {
-  const state = await createRun({ title: 'tmux long prompt', brief: '긴 prompt 주입', mode: 'cli' });
+test('TmuxSessionAdapter injects long prompts through a short file-reference instruction and cleans it up', async () => withTmuxEnv(async (fakeTmuxState) => {
+  const state = await createRun({ title: 'tmux long prompt', brief: '긴 prompt 파일 참조 주입', mode: 'cli' });
   const adapter = new TmuxSessionAdapter('tmux-codex');
   const longPrompt = `긴 prompt 시작\n${'swift view model mock\n'.repeat(20_000)}긴 prompt 끝`;
 
@@ -286,20 +362,68 @@ test('TmuxSessionAdapter injects long prompts through load-buffer file and clean
 
   const [events, fakeState] = await Promise.all([
     readEvents(state.run.id),
-    readFile(fakeTmuxState, 'utf8').then((body) => JSON.parse(body) as { logs: string[][]; loadedBuffers: Record<string, { filePath: string; bytes: number }> }),
+    readFile(fakeTmuxState, 'utf8').then((body) => JSON.parse(body) as { logs: string[][]; buffers: Record<string, string>; loadedBuffers: Record<string, { filePath: string; bytes: number }> }),
   ]);
   const loadBufferCalls = fakeState.logs.filter((args) => args[0] === 'load-buffer');
   const setBufferCalls = fakeState.logs.filter((args) => args[0] === 'set-buffer');
   const loaded = Object.values(fakeState.loadedBuffers ?? {})[0];
+  const pastedInstruction = Object.values(fakeState.buffers ?? {})[0] ?? '';
   const injected = events.find((event) => event.type === 'session.prompt_injected' && event.actor === 'reviewer');
+  const promptFilePath = injected?.payload.promptFilePath;
 
   assert.match(result.stdout, /\[reviewer\] captured tmux output/);
   assert.equal(setBufferCalls.length, 0);
   assert.equal(loadBufferCalls.length, 1);
+  assert.ok(loaded.bytes < 2_000);
+  assert.match(pastedInstruction, /AgentBoard prompt file/);
+  assert.doesNotMatch(pastedInstruction, /swift view model mock\nswift view model mock/);
+  assert.equal(await readFile(loaded.filePath, 'utf8').then(() => 'exists').catch(() => 'missing'), 'missing');
+  assert.equal(typeof promptFilePath, 'string');
+  assert.equal(await readFile(promptFilePath as string, 'utf8').then(() => 'exists').catch(() => 'missing'), 'missing');
+  assert.equal(injected?.payload.promptTransport, 'tmux-file-reference');
+  assert.equal(typeof injected?.payload.promptBytes, 'number');
+  assert.equal(typeof injected?.payload.promptInstructionBytes, 'number');
+}));
+
+test('TmuxSessionAdapter can fall back to full paste-buffer transport', async () => withTmuxEnv(async (fakeTmuxState) => {
+  process.env.AGENTBOARD_TMUX_PROMPT_TRANSPORT = 'paste-buffer';
+  const state = await createRun({ title: 'tmux paste fallback', brief: '기존 paste fallback', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+  const longPrompt = `긴 prompt 시작\n${'swift view model mock\n'.repeat(20_000)}긴 prompt 끝`;
+
+  const result = await adapter.run({ runId: state.run.id, role: 'planner', prompt: longPrompt });
+
+  const [events, fakeState] = await Promise.all([
+    readEvents(state.run.id),
+    readFile(fakeTmuxState, 'utf8').then((body) => JSON.parse(body) as { loadedBuffers: Record<string, { filePath: string; bytes: number }> }),
+  ]);
+  const loaded = Object.values(fakeState.loadedBuffers ?? {})[0];
+  const injected = events.find((event) => event.type === 'session.prompt_injected' && event.actor === 'planner');
+
+  assert.match(result.stdout, /\[planner\] captured tmux output/);
   assert.ok(loaded.bytes > 300_000);
   assert.equal(await readFile(loaded.filePath, 'utf8').then(() => 'exists').catch(() => 'missing'), 'missing');
   assert.equal(injected?.payload.promptTransport, 'tmux-load-buffer-file');
-  assert.equal(typeof injected?.payload.promptBytes, 'number');
+  assert.equal(injected?.payload.promptFilePath, undefined);
+}));
+
+test('TmuxSessionAdapter supports role-specific prompt transport override', async () => withTmuxEnv(async () => {
+  process.env.AGENTBOARD_TMUX_PROMPT_TRANSPORT = 'file-reference';
+  process.env.AGENTBOARD_ORCHESTRATOR_TMUX_PROMPT_TRANSPORT = 'paste-buffer';
+  const state = await createRun({ title: 'tmux role transport', brief: 'role별 prompt transport', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  await adapter.run({ runId: state.run.id, role: 'orchestrator', prompt: '사용자 요청을 라우팅해줘' });
+  await adapter.run({ runId: state.run.id, role: 'engineer', prompt: 'Swift mock 앱을 구현해줘' });
+
+  const events = await readEvents(state.run.id);
+  const orchestratorInjected = events.find((event) => event.type === 'session.prompt_injected' && event.actor === 'orchestrator');
+  const engineerInjected = events.find((event) => event.type === 'session.prompt_injected' && event.actor === 'engineer');
+
+  assert.equal(orchestratorInjected?.payload.promptTransport, 'tmux-load-buffer-file');
+  assert.equal(orchestratorInjected?.payload.promptFilePath, undefined);
+  assert.equal(engineerInjected?.payload.promptTransport, 'tmux-file-reference');
+  assert.equal(typeof engineerInjected?.payload.promptFilePath, 'string');
 }));
 
 test('TmuxSessionAdapter strips completion markers from returned output', async () => withTmuxEnv(async () => {
@@ -311,6 +435,89 @@ test('TmuxSessionAdapter strips completion markers from returned output', async 
   assert.match(result.stdout, /\[planner\] captured tmux output/);
   assert.doesNotMatch(result.stdout, /AGENTBOARD_DONE/);
   assert.doesNotMatch(result.stdout, /AGENTBOARD_BEGIN/);
+}));
+
+test('TmuxSessionAdapter retries when the first pasted prompt submit is ignored', async () => withTmuxEnv(async (fakeTmuxState) => {
+  process.env.FAKE_TMUX_IGNORE_FIRST_SUBMIT_ROLE = 'engineer';
+  const state = await createRun({ title: 'tmux submit retry', brief: '첫 submit 재시도', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  const result = await adapter.run({ runId: state.run.id, role: 'engineer', prompt: '첫 Enter가 무시되면 재시도' });
+
+  const [events, fakeState] = await Promise.all([
+    readEvents(state.run.id),
+    readFile(fakeTmuxState, 'utf8').then((body) => JSON.parse(body) as { logs: string[][] }),
+  ]);
+  const submitted = events.find((event) => event.type === 'session.prompt_submitted' && event.actor === 'engineer');
+  const submitKeys = fakeState.logs.filter((args) => args[0] === 'send-keys' && (args.at(-1) === 'Enter' || args.at(-1) === 'C-m'));
+
+  assert.match(result.stdout, /\[engineer\] captured tmux output/);
+  assert.equal(submitted?.payload.attempts, 2);
+  assert.ok(submitKeys.some((args) => args.at(-1) === 'C-m'));
+}));
+
+test('TmuxSessionAdapter fails fast when a pasted prompt is not submitted', async () => withTmuxEnv(async () => {
+  process.env.FAKE_TMUX_STUCK_PASTE_ROLE = 'engineer';
+  process.env.AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS = '10';
+  process.env.AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS = '10000';
+  const state = await createRun({ title: 'tmux submit failed', brief: 'prompt submit 실패', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  await assert.rejects(
+    () => adapter.run({ runId: state.run.id, role: 'engineer', prompt: '붙여넣기만 되고 실행되지 않는 prompt' }),
+    /tmux prompt submit failed/,
+  );
+
+  const [updated, events] = await Promise.all([
+    readState(state.run.id),
+    readEvents(state.run.id),
+  ]);
+  const failed = events.find((event) => event.type === 'session.prompt_submit_failed' && event.actor === 'engineer');
+
+  assert.equal(updated.sessions?.engineer?.status, 'blocked');
+  assert.equal(updated.agents.find((agent) => agent.role === 'engineer')?.status, 'blocked');
+  assert.equal(failed?.payload.reason, 'pasted-idle');
+  assert.ok(!events.some((event) => event.type === 'session.completion_timeout' && event.actor === 'engineer'));
+}));
+
+test('TmuxSessionAdapter does not treat visible file-reference instructions as submitted output', async () => withTmuxEnv(async () => {
+  process.env.FAKE_TMUX_STUCK_PASTE_ROLE = 'engineer';
+  process.env.FAKE_TMUX_VISIBLE_PROMPT_ROLE = 'engineer';
+  process.env.AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS = '10';
+  process.env.AGENTBOARD_TMUX_COMPLETION_TIMEOUT_MS = '10000';
+  const state = await createRun({ title: 'tmux visible instruction submit failed', brief: '짧은 instruction 미제출 감지', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  await assert.rejects(
+    () => adapter.run({ runId: state.run.id, role: 'engineer', prompt: '파일 참조 instruction이 보이기만 하고 실행되지 않음' }),
+    /tmux prompt submit failed/,
+  );
+
+  const events = await readEvents(state.run.id);
+  const failed = events.find((event) => event.type === 'session.prompt_submit_failed' && event.actor === 'engineer');
+
+  assert.equal(failed?.payload.reason, 'prompt-idle');
+  assert.ok(!events.some((event) => event.type === 'session.prompt_submitted' && event.actor === 'engineer'));
+  assert.ok(!events.some((event) => event.type === 'session.completion_timeout' && event.actor === 'engineer'));
+}));
+
+test('TmuxSessionAdapter treats prefixed pasted prompt placeholders as not submitted', async () => withTmuxEnv(async () => {
+  process.env.FAKE_TMUX_STUCK_PASTE_ROLE = 'planner';
+  process.env.FAKE_TMUX_PREFIXED_PASTE_ROLE = 'planner';
+  process.env.AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS = '10';
+  const state = await createRun({ title: 'tmux prefixed paste failed', brief: 'prefix가 붙은 pasted placeholder', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  await assert.rejects(
+    () => adapter.run({ runId: state.run.id, role: 'planner', prompt: '너는 Planner Agent다' }),
+    /tmux prompt submit failed/,
+  );
+
+  const events = await readEvents(state.run.id);
+  const failed = events.find((event) => event.type === 'session.prompt_submit_failed' && event.actor === 'planner');
+
+  assert.equal(failed?.payload.reason, 'pasted-idle');
+  assert.ok(!events.some((event) => event.type === 'session.prompt_submitted' && event.actor === 'planner'));
 }));
 
 test('TmuxSessionAdapter completes from idle prompt when DONE marker is omitted', async () => withTmuxEnv(async () => {
@@ -331,6 +538,21 @@ test('TmuxSessionAdapter completes from idle prompt when DONE marker is omitted'
   assert.doesNotMatch(result.stdout, /Use \/skills/);
   assert.equal(updated.sessions?.engineer?.status, 'completed');
   assert.equal(completed?.payload.completionSource, 'idle-prompt-fallback');
+}));
+
+test('TmuxSessionAdapter completes from stable idle output when all markers are omitted', async () => withTmuxEnv(async () => {
+  process.env.FAKE_TMUX_IDLE_OUTPUT_NO_MARKER_ROLE = 'reviewer';
+  const state = await createRun({ title: 'tmux idle output fallback', brief: 'marker 없는 idle output fallback', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  const result = await adapter.run({ runId: state.run.id, role: 'reviewer', prompt: 'marker 없이 답변 후 idle prompt' });
+
+  const events = await readEvents(state.run.id);
+  const completed = events.find((event) => event.type === 'session.completed' && event.actor === 'reviewer');
+
+  assert.match(result.stdout, /\[reviewer\] captured tmux output/);
+  assert.doesNotMatch(result.stdout, /Pasted Content/);
+  assert.equal(completed?.payload.completionSource, 'idle-output-fallback');
 }));
 
 test('TmuxSessionAdapter waits for DONE instead of accepting an unstable idle fallback', async () => withTmuxEnv(async () => {
@@ -430,6 +652,32 @@ test('TmuxSessionAdapter can reject permission prompts through the approval API'
   assert.match(result.stdout, /\[engineer\] captured tmux output/);
   assert.equal(rejected?.payload.approvalId, approvalId);
   assert.ok(escapeCount >= 1);
+}));
+
+test('TmuxSessionAdapter auto-approves allowlisted permission prompts', async () => withTmuxEnv(async (fakeTmuxState) => {
+  process.env.FAKE_TMUX_PERMISSION_ROLE = 'engineer';
+  process.env.AGENTBOARD_AUTO_APPROVE_COMMANDS = 'swiftc -typecheck *';
+  const state = await createRun({ title: 'tmux approval auto approve', brief: 'allowlist 자동 승인', mode: 'cli' });
+  const adapter = new TmuxSessionAdapter('tmux-codex');
+
+  const result = await adapter.run({ runId: state.run.id, role: 'engineer', prompt: 'allowlist에 있는 검증 명령 실행' });
+
+  const [updated, events, fakeState] = await Promise.all([
+    readState(state.run.id),
+    readEvents(state.run.id),
+    readFile(fakeTmuxState, 'utf8').then((body) => JSON.parse(body) as { logs: string[][] }),
+  ]);
+  const requested = events.find((event) => event.type === 'approval.requested' && event.actor === 'engineer');
+  const approved = events.find((event) => event.type === 'approval.approved' && event.actor === 'engineer');
+  const enterCount = fakeState.logs.filter((args) => args[0] === 'send-keys' && args.at(-1) === 'Enter').length;
+
+  assert.match(result.stdout, /\[engineer\] captured tmux output/);
+  assert.equal(updated.sessions?.engineer?.status, 'completed');
+  assert.equal(requested?.payload.autoApprove, true);
+  assert.equal(requested?.payload.matchedCommandPattern, 'swiftc -typecheck *');
+  assert.equal(approved?.payload.source, 'auto');
+  assert.equal(approved?.payload.matchedCommandPattern, 'swiftc -typecheck *');
+  assert.ok(enterCount >= 2);
 }));
 
 test('CLI runner invokes tmux-codex adapters through persistent sessions', async () => withTmuxEnv(async () => {

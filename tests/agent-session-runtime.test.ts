@@ -361,6 +361,17 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
     }),
     '```',
   ].join('\n'), state, '후보 답변');
+  const noisyVerdict = parseOrchestratorVerdict([
+    '• Ran jq -e . evidence.json',
+    JSON.stringify({ turnToken: 'debug-token', files: ['evidence.json'] }, null, 2),
+    '────────────────────────────────',
+    '• {',
+    '  "status": "complete",',
+    '  "reason": "도구 출력 뒤의 마지막 verdict JSON을 선택해야 합니다.",',
+    '  "userAnswer": "노이즈 뒤 최종 답변",',
+    '  "nextSteps": []',
+    '}',
+  ].join('\n'), state, '후보 답변');
   const fallbackVerdict = parseOrchestratorVerdict('JSON이 아닌 출력', state, '후보 답변');
   const engineerOnlyPlan = parseOrchestratorPlan(JSON.stringify({
     strategy: 'engineer-only',
@@ -406,6 +417,8 @@ test('orchestrator parsers tolerate wrapped JSON and expose fallback parse error
   assert.match(hardWrappedPlan.reason, /기술 구현이 필요 하지 않으므로/);
   assert.equal(verdict.status, 'complete');
   assert.equal(verdict.userAnswer, '최종 답변');
+  assert.equal(noisyVerdict.status, 'complete');
+  assert.equal(noisyVerdict.userAnswer, '노이즈 뒤 최종 답변');
   assert.equal(fallbackVerdict.status, 'complete');
   assert.equal(fallbackVerdict.fallback, true);
   assert.match(fallbackVerdict.parseError ?? '', /JSON object/);

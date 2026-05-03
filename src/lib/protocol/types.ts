@@ -28,6 +28,8 @@ export type EventType =
   | 'intervention.decision_made'
   | 'session.created'
   | 'session.prompt_injected'
+  | 'session.prompt_submitted'
+  | 'session.prompt_submit_failed'
   | 'session.output_captured'
   | 'session.completed'
   | 'session.completion_timeout'

@@ -31,8 +31,9 @@ AgentBoard MVP에서 중요한 것은 “ChatGPT형 사용자 요청/응답”, 
 - Message Bus가 `messages.jsonl`과 target inbox에 동시에 기록하는지
 - Intervention API가 user message를 생성하고 agent inbox로 라우팅하는지
 - Artifact writer가 최종 Markdown을 갱신하는지
+- Workspace API가 파일 목록/preview를 안전하게 제공하고 path traversal을 막는지
 - Client session store가 active/recent run을 기록하고 stale run을 안전하게 표시하는지
-- Delete API가 완료/중단 run을 삭제하고 client session index에서 제거하는지
+- Delete API가 완료/중단 run과 workspace를 삭제하고 client session index에서 제거하는지
 - Agent Session Runtime이 Orchestrator plan, prompt builder, message bus를 사용하는지
 - Agent Session Runtime이 진행 중 사용자 개입을 checkpoint에서 Orchestrator decision으로 처리하는지
 - `tmux-codex` adapter가 DONE marker, stable idle fallback, permission approval event를 올바르게 처리하는지
@@ -48,7 +49,7 @@ README 흐름이 실제로 되는지 검증한다.
 - 채팅 메시지 업데이트 확인
 - 진행 중 입력 잠금과 취소 확인
 - 완료 뒤 다음 요청 전송과 새 agent 답변 확인
-- final artifact 확인
+- final artifact와 workspace 산출물 확인
 
 ## 우선순위
 
@@ -68,6 +69,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 12. Chat UI state persistence smoke test
 13. Run delete store/API test
 14. implementation 요청이 workspace 변경 파일과 검증 증거 없이는 complete되지 않는 regression test
+15. Workspace list/read API path traversal regression test
 
 ## 테스트 작성 규칙
 
@@ -78,6 +80,7 @@ ASAP 구현에서는 아래 순서로 테스트를 추가한다.
 - 시간/ID가 필요한 경우 deterministic helper를 주입한다.
 - “성공했다”는 UI 문구보다 event/message/artifact 파일을 함께 검증한다.
 - “구현 완료”는 텍스트 답변만 보지 말고 workspace 파일 증거와 commandsRun/testResults를 함께 검증한다.
+- Workspace 파일 preview API는 `../` 같은 경로 탈출을 반드시 거부해야 한다.
 - Codex stdout 자체보다 AgentBoard runtime이 만든 context, handoff message, Orchestrator user 답변을 검증한다.
 - Runtime 순서 변경은 Orchestrator plan parser와 fallback strategy 테스트로 먼저 고정한다.
 - Prompt 문구 변경은 stdout snapshot보다 필수 context section 존재 여부를 검증한다.
@@ -167,12 +170,17 @@ it('persists user request and starts a new agent answer turn', async () => {
 - [ ] agent-agent message 표시
 - [ ] 4분할 Agent 채팅 패널에서 agent-agent message 확인 가능
 - [ ] Logs drawer에서 handoff/raw event 확인 가능
+- [ ] Logs drawer에서 Agent 전달/권한 요청/오류/tmux session 필터 확인 가능
 - [ ] `tmux-codex` 권한 요청 카드 승인/거절 가능
+- [ ] 상단 `승인 요청` badge 클릭 시 pending 요청이 있는 Agent 확대 화면으로 이동
+- [ ] 권한 요청 카드가 Agent 메시지 feed 시간순 위치에 표시되고 기본 card에는 Codex 원본 `1) 2) 3)` 선택지가 노출되지 않음
 - [ ] 진행 중 composer가 활성화되고 `개입 보내기`/`현재 작업 취소` 버튼 표시
 - [ ] 진행 중 개입 전송 시 Logs에 `user.intervention_queued`, `intervention.decision_made` 표시
 - [ ] 완료 뒤 다음 요청 전송 가능
 - [ ] 취소 시 `control.stopped` event와 `stopped` status 기록
 - [ ] Logs 내부 실행 요약 artifact 표시
+- [ ] `산출물` 패널에서 Final Report, Messages, Workspace 탭 확인 가능
+- [ ] 완료/중단 run 삭제 시 `.agentboard/workspaces/<runId>/`도 함께 삭제됨
 - [ ] 루트 페이지 좌측 목록에서 active/recent run resume 가능
 - [ ] ChatRoom 새로고침 뒤 선택 agent, Logs/실행 요약 표시 상태, draft 복원
 - [ ] 오래된 running run이 stale로 표시되고 기록 조회 가능

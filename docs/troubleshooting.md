@@ -125,6 +125,25 @@ ls -la .agentboard/runs/<runId>/artifacts
 cat .agentboard/runs/<runId>/artifacts/final-report.md
 ```
 
+UI에서는 상단 `산출물` 버튼의 `Final Report` 탭에서 같은 내용을 볼 수 있다.
+
+## Workspace 산출물이 보이지 않음
+
+### 가능한 원인
+
+- 요청이 `answer`로 분류되어 `.agentboard/workspaces/<runId>/`가 필요하지 않다.
+- 구현 요청이지만 Engineer가 실제 파일을 생성하지 못했다.
+- run 삭제로 workspace가 함께 삭제되었다.
+
+### 확인
+
+```bash
+ls -la .agentboard/workspaces/<runId>/
+cat .agentboard/runs/<runId>/messages.jsonl
+```
+
+UI에서는 `산출물` → `Workspace` 탭에서 파일 목록과 preview를 확인한다. implementation 요청인데 파일이 없으면 경고가 표시된다.
+
 ## 좌측 최근 대화 목록이 보이지 않음
 
 ### 가능한 원인
@@ -234,10 +253,27 @@ cat .agentboard/runs/<runId>/state.json
 
 ### 해결
 
-- 해당 Agent 채팅 패널의 승인/거절 카드를 누른다.
-- 카드가 보이지 않으면 페이지를 새로고침하고 Logs drawer에서 `approval.requested` event를 확인한다.
+- 상단 `승인 요청` badge를 눌러 pending 요청이 있는 Agent 확대 화면으로 이동한 뒤 승인/거절 카드를 누른다.
+- 카드가 보이지 않으면 해당 Agent를 `크게 보기`로 열거나 페이지를 새로고침하고 Logs drawer에서 `approval.requested` event를 확인한다.
 - 수동 확인이 필요하면 tmux pane에서 Codex 권한 prompt가 떠 있는지 본다.
-- API로 처리하려면 `POST /api/runs/<runId>/approvals`에 `approvalId`, `decision` 값을 보낸다.
+- API로 처리하려면 `POST /api/runs/<runId>/approvals`에 `approvalId`, `role`, `action: "approve" | "reject"` 값을 보낸다.
+- 반복적인 검증 명령만 자동 승인하려면 `.env.local`에 `AGENTBOARD_AUTO_APPROVE_COMMANDS=swift test,npm test,npm run typecheck`처럼 allowlist를 설정하고 서버를 재시작한다. `*` glob을 지원하므로 `swift test*`처럼 인자 포함 명령을 허용할 수 있다.
+
+## Engineer Agent 완료 감지 timeout이 발생함
+
+### 구분 기준
+
+- `session.prompt_submit_failed`: prompt instruction이 입력창에 남아 Codex가 실제 실행을 시작하지 못한 경우다. completion timeout보다 먼저 빠르게 실패하며 `AGENTBOARD_TMUX_SUBMIT_CONFIRM_TIMEOUT_MS`와 `AGENTBOARD_TMUX_SUBMIT_RETRY_COUNT`를 확인한다. `reason=pasted-idle`은 Codex가 긴 paste를 `[Pasted Content ...]`로 접은 채 대기 중이라는 뜻이고, `reason=prompt-idle`은 기본 `file-reference`의 짧은 파일 읽기 instruction이 보이지만 아직 제출되지 않았다는 뜻이다.
+- `session.completion_timeout`: Codex 실행은 시작됐지만 `AGENTBOARD_DONE` marker나 idle fallback 완료 조건이 제한 시간 안에 감지되지 않은 경우다.
+
+### 확인
+
+```bash
+cat .agentboard/runs/<runId>/events.jsonl | grep -E "prompt_submit|completion_timeout|approval"
+tmux capture-pane -pt <session>:<window>.<pane> -S -200
+```
+
+기본 `file-reference` transport에서는 pane에 짧은 prompt 파일 읽기 instruction만 보여야 한다. `[Pasted Content ...]` 또는 `너는[Pasted Content ...]`처럼 긴 prompt가 접힌 화면이 반복되면 `AGENTBOARD_TMUX_PROMPT_TRANSPORT`가 `paste-buffer`로 설정됐는지 확인한다.
 
 ## 실행 중이던 run이 stale로 표시됨
 
